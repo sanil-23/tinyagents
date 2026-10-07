@@ -109,6 +109,7 @@ use crate::middleware::{
 use crate::model_registry::{ResolvedModelBinding, model_eligible};
 use crate::runtime::{AgentHarness, EndStrategy, InvalidArgsPolicy, UnknownToolPolicy};
 use crate::structured::{StructuredExtractor, StructuredStrategy};
+use crate::terminal::{TerminalOutcome, TimeoutPhase};
 use futures::StreamExt;
 use serde_json::Value;
 use tinyinference_llm::message::{Message, MessageDelta};
