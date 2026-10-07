@@ -288,11 +288,7 @@ impl TerminalOutcome {
         let outcome = match exit {
             LoopExit::Finished => Self::completed(),
             LoopExit::LimitStop(kind) => Self::limit_reached(
-                Some(match kind {
-                    crate::limits::LimitKind::ModelCalls => LimitKind::ModelCalls,
-                    crate::limits::LimitKind::ToolCalls => LimitKind::ToolCalls,
-                    crate::limits::LimitKind::WallClock => LimitKind::WallClock,
-                }),
+                Some(*kind),
                 format!(
                     "stopped with the partial run: {} limit reached",
                     kind.as_str()
