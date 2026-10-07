@@ -332,7 +332,11 @@ async fn a_recovery_pop_is_retracted_and_the_mirror_stays_exact() {
 #[tokio::test]
 async fn steer_between_turns_reports_the_right_first_index() {
     let harness = harness(
-        vec![tool_turn(&["a"]), tool_turn(&["b"]), response(vec![], "done")],
+        vec![
+            tool_turn(&["a"]),
+            tool_turn(&["b"]),
+            response(vec![], "done"),
+        ],
         PayloadCapture::default(),
     );
     let queue = Arc::new(RunQueue::new());

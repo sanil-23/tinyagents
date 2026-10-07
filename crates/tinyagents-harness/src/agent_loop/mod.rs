@@ -141,8 +141,8 @@ mod turn_control;
 mod turn_recovery;
 mod unknown_tool;
 
-pub use stream::AgentStreamItem;
 pub(crate) use lifecycle::TurnTracker;
+pub use stream::AgentStreamItem;
 pub(crate) use stream::{StreamRunner, invoke_stream_with_runner};
 
 #[cfg(test)]

@@ -51,7 +51,12 @@ impl TurnTracker {
     }
 
     /// Announces every message appended since the last call, in order.
-    pub(crate) fn flush(&mut self, events: &EventSink, capture: PayloadCapture, messages: &[Message]) {
+    pub(crate) fn flush(
+        &mut self,
+        events: &EventSink,
+        capture: PayloadCapture,
+        messages: &[Message],
+    ) {
         // A shrunk transcript must have been reported through `retract_to` or
         // `rebase`; clamp defensively rather than index out of range.
         if messages.len() < self.announced {

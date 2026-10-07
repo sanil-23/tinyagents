@@ -83,7 +83,7 @@ impl SessionDriver for GatedDriver {
         let mut history = request.history;
         history.push(Message::assistant("Sunny."));
         Ok(DriverOutcome {
-        outcome: None,
+            outcome: None,
             history,
             output: Some("Sunny.".into()),
             partial: None,
