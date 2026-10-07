@@ -119,12 +119,20 @@ fn deferral_and_interrupt_errors_are_suspended() {
     assert_eq!(deferred.class, TerminalClass::Suspended);
     let paused = TerminalOutcome::from_error(
         &TinyAgentsError::Interrupted {
-            node: "n".into(),
+            node: "steering-pause".into(),
             message: "m".into(),
         },
         site,
     );
     assert_eq!(paused.reason, TerminalReason::Paused);
+    let other = TerminalOutcome::from_error(
+        &TinyAgentsError::Interrupted {
+            node: "n".into(),
+            message: "m".into(),
+        },
+        site,
+    );
+    assert_eq!(other.reason, TerminalReason::Internal);
 }
 
 #[test]
