@@ -215,7 +215,8 @@ where
         // interrupt.
         match outcome {
             Ok(None) => {
-                let outcome = TerminalOutcome::completed().with_provider_started(run.model_calls > 0);
+                let outcome =
+                    TerminalOutcome::completed().with_provider_started(run.model_calls > 0);
                 run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),

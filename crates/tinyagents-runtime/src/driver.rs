@@ -85,7 +85,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
             request.tools.specs(),
         ) {
             return Err(DriverFailure {
- outcome: None,
+                outcome: None,
                 error: RuntimeError::ToolSnapshotMismatch,
                 partial: None,
             });

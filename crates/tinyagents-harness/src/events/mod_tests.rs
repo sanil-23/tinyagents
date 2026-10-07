@@ -56,7 +56,8 @@ fn smoke_event_sink_records_events() {
     assert_eq!(recorder.len(), 1);
 
     let _ = sink.emit(AgentEvent::RunCompleted {
-        run_id: run_id.clone(), outcome: None
+        run_id: run_id.clone(),
+        outcome: None,
     });
     assert_eq!(recorder.len(), 2);
 
@@ -101,7 +102,8 @@ fn smoke_event_journal_replay() {
         thread_id: None,
     });
     journal.append(AgentEvent::RunCompleted {
-        run_id: run_id.clone(), outcome: None
+        run_id: run_id.clone(),
+        outcome: None,
     });
 
     assert_eq!(journal.len(), 2);
@@ -625,13 +627,20 @@ fn run_events_with_outcomes_round_trip_and_old_payloads_still_parse() {
     let old: AgentEvent =
         serde_json::from_value(serde_json::json!({"kind": "run_completed", "run_id": "r"}))
             .unwrap();
-    assert!(matches!(old, AgentEvent::RunCompleted { outcome: None, .. }));
+    assert!(matches!(
+        old,
+        AgentEvent::RunCompleted { outcome: None, .. }
+    ));
     let old: AgentEvent = serde_json::from_value(
         serde_json::json!({"kind": "queued_message_applied", "lane": "steer", "count": 2}),
     )
     .unwrap();
     assert!(matches!(
         old,
-        AgentEvent::QueuedMessageApplied { count: 2, first_index: 0, .. }
+        AgentEvent::QueuedMessageApplied {
+            count: 2,
+            first_index: 0,
+            ..
+        }
     ));
 }

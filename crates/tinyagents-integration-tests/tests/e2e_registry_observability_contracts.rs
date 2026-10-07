@@ -234,11 +234,13 @@ fn component_metadata_and_event_kinds_are_stable_serializable_contracts() {
         },
         AgentEvent::StreamClosed,
         AgentEvent::RunCompleted {
-            run_id: RunId::new("run-1"), outcome: None
+            run_id: RunId::new("run-1"),
+            outcome: None,
         },
         AgentEvent::RunFailed {
             run_id: RunId::new("run-2"),
-            error: "bad".into(), outcome: None
+            error: "bad".into(),
+            outcome: None,
         },
     ];
     let kinds: Vec<_> = events.iter().map(AgentEvent::kind).collect();
@@ -274,7 +276,8 @@ async fn event_sinks_journals_and_status_stores_preserve_run_lineage() {
         thread_id: Some(ThreadId::new("thread-1")),
     });
     let second = sink.emit(AgentEvent::RunCompleted {
-        run_id: RunId::new("run-1"), outcome: None
+        run_id: RunId::new("run-1"),
+        outcome: None,
     });
     assert_eq!(first.offset, 0);
     assert_eq!(second.offset, 1);

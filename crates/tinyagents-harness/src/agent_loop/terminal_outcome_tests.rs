@@ -71,7 +71,12 @@ fn harness_with(model: Arc<dyn ChatModel<()>>) -> AgentHarness<()> {
 fn terminal_events(events: &[AgentEvent]) -> Vec<&AgentEvent> {
     events
         .iter()
-        .filter(|e| matches!(e, AgentEvent::RunCompleted { .. } | AgentEvent::RunFailed { .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::RunCompleted { .. } | AgentEvent::RunFailed { .. }
+            )
+        })
         .collect()
 }
 
@@ -155,7 +160,11 @@ async fn a_provider_failure_is_classified_on_run_failed_and_the_partial_run() {
     assert_eq!(outcome.message, error.to_string());
     let events = recorder.events();
     match terminal_events(&events)[0] {
-        AgentEvent::RunFailed { error: e, outcome: Some(o), .. } => {
+        AgentEvent::RunFailed {
+            error: e,
+            outcome: Some(o),
+            ..
+        } => {
             assert_eq!(*e, error.to_string(), "legacy string preserved");
             assert_eq!(*o, outcome);
         }

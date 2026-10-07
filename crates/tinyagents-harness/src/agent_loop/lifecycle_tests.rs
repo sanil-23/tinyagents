@@ -174,7 +174,11 @@ async fn message_payloads_follow_the_capture_policy() {
         for event in recorder.events() {
             if let AgentEvent::MessageAppended { role, message, .. } = event {
                 seen += 1;
-                let expected = if role == "tool" { expect_tool } else { expect_message };
+                let expected = if role == "tool" {
+                    expect_tool
+                } else {
+                    expect_message
+                };
                 assert_eq!(message.is_some(), expected, "role {role}");
             }
         }
@@ -205,7 +209,9 @@ async fn queued_message_applied_carries_the_applied_messages() {
         PayloadCapture::all(),
     );
     let queue = Arc::new(RunQueue::new());
-    queue.push(QueueLane::Steer, Message::user("be brief")).await;
+    queue
+        .push(QueueLane::Steer, Message::user("be brief"))
+        .await;
     let recorder = EventRecorder::new();
     let ctx = RunContext::new(RunConfig::new("queue"), ())
         .with_events(recorder.sink())
@@ -231,7 +237,10 @@ async fn queued_message_applied_carries_the_applied_messages() {
     assert_eq!(applied.0, 1);
     assert_eq!(applied.1, 3, "after user, assistant, tool");
     assert_eq!(applied.2.len(), 1);
-    assert_eq!(applied.2[0], serde_json::to_value(Message::user("be brief")).unwrap());
+    assert_eq!(
+        applied.2[0],
+        serde_json::to_value(Message::user("be brief")).unwrap()
+    );
     // The same message is also announced as an ordinary transcript append.
     assert!(lifecycle(&events).contains(&"message:3:user".to_string()));
 }

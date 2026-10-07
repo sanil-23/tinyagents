@@ -360,7 +360,9 @@ impl SessionTerminal {
             }
             Self::Completed(_) => TerminalOutcome::completed(),
             Self::Cancelled => TerminalOutcome::new(TerminalReason::Cancelled, "turn cancelled"),
-            Self::Failed(message) => TerminalOutcome::new(TerminalReason::Internal, message.clone()),
+            Self::Failed(message) => {
+                TerminalOutcome::new(TerminalReason::Internal, message.clone())
+            }
         }
     }
 }

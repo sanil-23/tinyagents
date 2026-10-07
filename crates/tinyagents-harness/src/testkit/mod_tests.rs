@@ -274,7 +274,8 @@ fn event_recorder_kinds() {
         thread_id: None,
     });
     sink.emit(AgentEvent::RunCompleted {
-        run_id: RunId::new("r1"), outcome: None
+        run_id: RunId::new("r1"),
+        outcome: None,
     });
 
     let kinds = recorder.kinds();
@@ -349,7 +350,8 @@ fn make_trajectory() -> Vec<AgentEvent> {
             output: None,
         },
         AgentEvent::RunCompleted {
-            run_id: RunId::new("r1"), outcome: None
+            run_id: RunId::new("r1"),
+            outcome: None,
         },
     ]
 }
@@ -440,7 +442,8 @@ fn trajectory_assert_completed_panics_when_missing() {
 fn trajectory_failed_is_true_when_run_failed_present() {
     let events = vec![AgentEvent::RunFailed {
         run_id: RunId::new("r1"),
-        error: "oops".into(), outcome: None
+        error: "oops".into(),
+        outcome: None,
     }];
     let traj = Trajectory::from_events(events);
     assert!(traj.failed());

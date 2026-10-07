@@ -605,7 +605,7 @@ async fn persistence_failure_rolls_back_and_a_partial_never_falls_back_to_two_wr
         interrupted: true,
     };
     let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
- outcome: None,
+        outcome: None,
         error: RuntimeError::Driver("interrupted".into()),
         partial: Some(partial),
     })])))
@@ -773,7 +773,7 @@ async fn file_history_commits_partial_model_history_and_display_only_partial_tog
         interrupted: true,
     };
     let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
- outcome: None,
+        outcome: None,
         error: RuntimeError::Driver("interrupted".into()),
         partial: Some(partial),
     })])))
@@ -872,7 +872,7 @@ async fn partial_usage_error_leaves_the_session_and_target_entirely_uncommitted(
         interrupted: true,
     };
     let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
- outcome: None,
+        outcome: None,
         error: RuntimeError::Driver("driver interrupted".into()),
         partial: Some(partial),
     })])))
@@ -2026,7 +2026,7 @@ async fn receipt_reports_a_compaction_as_replacement_not_an_append_range() {
 async fn failure_and_cancellation_do_not_run_after_commit_and_emit_one_terminal() {
     let (failure_hook, events) = hook(vec![]);
     let mut failed = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
- outcome: None,
+        outcome: None,
         error: RuntimeError::Driver("no".into()),
         partial: None,
     })])))
@@ -4258,7 +4258,10 @@ async fn driver_failures_deliver_their_typed_outcome_before_the_terminal() {
         )
         .await;
     assert_eq!(hook.outcomes.lock().unwrap().as_slice(), [typed]);
-    assert_eq!(hook.order.lock().unwrap().as_slice(), ["outcome", "terminal"]);
+    assert_eq!(
+        hook.order.lock().unwrap().as_slice(),
+        ["outcome", "terminal"]
+    );
 
     // An untyped failure falls back to a derived Failure-class outcome.
     let hook = outcome_hook();

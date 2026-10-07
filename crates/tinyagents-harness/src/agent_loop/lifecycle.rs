@@ -56,7 +56,10 @@ impl TurnTracker {
         self.announced = self.announced.min(messages.len());
         for (index, message) in messages.iter().enumerate().skip(self.announced) {
             let (call_id, captured) = match message {
-                Message::Tool(tool) => (Some(CallId::new(tool.tool_call_id.clone())), capture.tool_io),
+                Message::Tool(tool) => (
+                    Some(CallId::new(tool.tool_call_id.clone())),
+                    capture.tool_io,
+                ),
                 _ => (None, capture.model_io),
             };
             ctx.emit(AgentEvent::MessageAppended {

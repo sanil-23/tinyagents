@@ -37,7 +37,15 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // partial conversation.
         let mut turns = super::lifecycle::TurnTracker::new(messages.len());
         let outcome = self
-            .run_loop_body(state, ctx, run, status, &mut messages, &mut turns, streaming)
+            .run_loop_body(
+                state,
+                ctx,
+                run,
+                status,
+                &mut messages,
+                &mut turns,
+                streaming,
+            )
             .await;
         // Announce whatever the final turn appended and close it, on every
         // exit path, before the transcript moves onto the run.

@@ -101,7 +101,8 @@ fn latency_metrics_correlate_started_and_completed_by_call_id() {
             5,
             1_500,
             AgentEvent::RunCompleted {
-                run_id: RunId::new("r1"), outcome: None
+                run_id: RunId::new("r1"),
+                outcome: None,
             },
         ),
     ];
@@ -357,7 +358,8 @@ fn redacting_sink_with_no_secrets_is_pass_through() {
     sink.on_event(&record(
         0,
         AgentEvent::RunCompleted {
-            run_id: RunId::new("r"), outcome: None
+            run_id: RunId::new("r"),
+            outcome: None,
         },
     ));
     assert_eq!(downstream.events().len(), 1);

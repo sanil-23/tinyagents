@@ -93,8 +93,8 @@ pub mod store;
 pub mod stream;
 pub mod structured;
 pub mod summarization;
-pub mod testkit;
 pub mod terminal;
+pub mod testkit;
 pub mod title;
 pub mod token_estimation;
 pub mod tool;
@@ -125,7 +125,6 @@ pub use capability::{
 pub use cost::CostTotals;
 pub use error::{Result, TinyAgentsError};
 pub use ids::*;
-pub use terminal::{TerminalClass, TerminalOutcome, TerminalReason, TimeoutPhase};
 pub use model_registry::{ModelRegistry, ModelSelection, ResolvedModelBinding};
 pub use no_progress::{
     ArgumentChurnDetector, CallGate, ClassifiedFailure, ClassifiedFailureTracker,
@@ -156,4 +155,5 @@ pub use steering::{
     RecentRequestIds, RequestIdError, SteeringCommand, SteeringCommandKind, SteeringHandle,
     SteeringOutcome, SteeringPolicy,
 };
+pub use terminal::{TerminalClass, TerminalOutcome, TerminalReason, TimeoutPhase};
 pub use tool::ToolRegistry;
