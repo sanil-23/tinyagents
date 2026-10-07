@@ -123,6 +123,7 @@ mod dialect;
 mod entry;
 mod handoff_transform;
 mod host_budget;
+mod lifecycle;
 mod mixed_turn;
 mod model_call;
 mod model_turn;
