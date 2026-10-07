@@ -116,6 +116,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
             .iter()
             .rev()
             .find_map(|message| matches!(message, Message::Assistant(_)).then(|| message.text()));
+        let terminal = partial.run.terminal.clone();
         let outcome = DriverOutcome {
             history: partial.run.messages,
             output: output.clone(),
@@ -131,7 +132,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
         };
         match partial.error {
             Some(error) => Err(DriverFailure {
- outcome: None,
+                outcome: terminal,
                 error: RuntimeError::Driver(error.to_string()),
                 partial: Some(outcome),
             }),

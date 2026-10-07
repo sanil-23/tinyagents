@@ -628,6 +628,7 @@ impl<C: Clone + Send + Sync + 'static> Session<C> {
                         self.committed_turns += 1;
                     }
                 }
+                terminal_guard.set_outcome(failure.outcome);
                 return Err(failure.error);
             }
         };
@@ -1050,6 +1051,8 @@ impl<C: Clone + Send + Sync + 'static> Session<C> {
 struct TerminalGuard<C: Clone + Send + Sync + 'static> {
     hooks: Arc<dyn SessionHooks<C>>,
     terminal: Option<SessionTerminal>,
+    /// The driver's own typed classification of a failure, when it supplied one.
+    outcome: Option<TerminalOutcome>,
     committed: bool,
 }
 
@@ -1058,12 +1061,30 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
         Self {
             hooks,
             terminal: Some(SessionTerminal::Failed("session turn dropped".into())),
+            // A turn future dropped mid-flight was abandoned by its caller.
+            outcome: Some(TerminalOutcome::new(
+                TerminalReason::Cancelled,
+                "session turn dropped",
+            )),
             committed: false,
         }
     }
 
     fn set(&mut self, terminal: SessionTerminal) {
+        // An explicit terminal replaces the drop-time default; a driver's typed
+        // outcome (set separately, earlier) is kept.
+        if self.terminal_is_default() {
+            self.outcome = None;
+        }
         self.terminal = Some(terminal);
+    }
+
+    fn terminal_is_default(&self) -> bool {
+        matches!(&self.terminal, Some(SessionTerminal::Failed(m)) if m == "session turn dropped")
+    }
+
+    fn set_outcome(&mut self, outcome: Option<TerminalOutcome>) {
+        self.outcome = outcome;
     }
 
     fn finalize_commit(&mut self, receipt: CommitReceipt<C>) -> tokio::task::JoinHandle<()> {
