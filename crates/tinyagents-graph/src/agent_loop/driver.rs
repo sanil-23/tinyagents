@@ -217,8 +217,15 @@ where
         // interrupt.
         match outcome {
             Ok(None) => {
-                let outcome =
-                    TerminalOutcome::completed().with_provider_started(run.model_calls > 0);
+                let outcome = if limit_stop {
+                    TerminalOutcome::limit_reached(
+                        Some(LimitKind::ModelCalls),
+                        "stopped with the partial run: model_calls limit reached",
+                    )
+                } else {
+                    TerminalOutcome::completed()
+                }
+                .with_provider_started(run.model_calls > 0);
                 run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),
