@@ -879,6 +879,10 @@ impl<Ctx> RunContext<Ctx> {
     ///
     /// Returns an error if the configured model-call cap is exceeded.
     pub fn record_model_call(&mut self) -> Result<()> {
+        self.last_limit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         self.limits.record_model_call()
     }
 
@@ -886,6 +890,10 @@ impl<Ctx> RunContext<Ctx> {
     ///
     /// Returns an error if the configured tool-call cap is exceeded.
     pub fn record_tool_call(&mut self) -> Result<()> {
+        self.last_limit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         self.limits.record_tool_call()
     }
 

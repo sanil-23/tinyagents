@@ -475,7 +475,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 } else {
                     TimeoutPhase::BeforeProvider
                 };
-                let last_limit = ctx.take_last_limit();
+                let last_limit = matches!(error, TinyAgentsError::LimitExceeded(_))
+                    .then(|| ctx.take_last_limit())
+                    .flatten();
                 let outcome = TerminalOutcome::from_error(&error, site).with_limit_kind(last_limit);
                 terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
