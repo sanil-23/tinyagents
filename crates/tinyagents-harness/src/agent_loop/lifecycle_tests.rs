@@ -401,3 +401,60 @@ fn tracker_retract_and_rebase_are_explicit() {
         ]
     );
 }
+
+/// A mixed structured turn is closed before its queued steering is drained, so
+/// the queued message is announced after `TurnCompleted` and is not counted as
+/// one of that turn's tool results.
+#[tokio::test]
+async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
+    let mixed = response(
+        vec![
+            ToolCall::new("s1", "answer", json!({"value": "first"})),
+            ToolCall::new("c1", "echo", json!({})),
+        ],
+        "",
+    );
+    let last = response(
+        vec![ToolCall::new("s2", "answer", json!({"value": "final"}))],
+        "",
+    );
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::new(ScriptedModel::new(vec![mixed, last])));
+    harness.register_tool(Arc::new(EchoTool));
+    harness.with_policy(RunPolicy {
+        end_strategy: crate::runtime::EndStrategy::Exhaustive,
+        default_response_format: Some(crate::runtime::ResponseFormat::auto(
+            "answer",
+            json!({"type": "object"}),
+        )),
+        ..RunPolicy::default()
+    });
+    let queue = Arc::new(RunQueue::new());
+    queue
+        .push(QueueLane::Steer, Message::tool("queued-call", "late result"))
+        .await;
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("mixed"), ())
+        .with_events(recorder.sink())
+        .with_run_queue(Arc::clone(&queue));
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("go")])
+        .await
+        .unwrap();
+
+    let events = recorder.events();
+    let lines = lifecycle(&events);
+    let completed = lines
+        .iter()
+        .position(|line| line.starts_with("turn.completed:1:"))
+        .expect("turn 1 completed");
+    assert_eq!(
+        lines[completed], "turn.completed:1:2:s1,c1",
+        "only the turn's own tool results are counted: {lines:?}"
+    );
+    let queued = lines
+        .iter()
+        .position(|line| line.ends_with(":queued-call"))
+        .expect("queued message announced");
+    assert!(completed < queued, "queued message after TurnCompleted: {lines:?}");
+}
