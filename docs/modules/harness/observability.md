@@ -141,6 +141,7 @@ Event kinds should include:
 - `summary.created`
 - `cache.hit`
 - `cache.miss`
+- `cache.prompt_miss`
 - `usage.recorded`
 - `cost.recorded`
 - `retry.scheduled`
