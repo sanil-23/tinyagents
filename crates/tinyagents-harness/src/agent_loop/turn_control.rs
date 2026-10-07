@@ -29,12 +29,22 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             return false;
         }
         let count = items.len();
+        let first_index = messages.len();
+        // Payloads follow the capture policy, like every other event.
+        let captured = if self.policy.capture.model_io {
+            items
+                .iter()
+                .map(|item| serde_json::to_value(item).unwrap_or(serde_json::Value::Null))
+                .collect()
+        } else {
+            Vec::new()
+        };
         messages.extend(items);
         let record = ctx.emit(AgentEvent::QueuedMessageApplied {
             lane,
             count,
-            first_index: 0,
-            messages: Vec::new(),
+            first_index,
+            messages: captured,
         });
         status.set_last_event(record.id);
         tracing::debug!(

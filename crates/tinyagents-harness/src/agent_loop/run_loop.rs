@@ -35,9 +35,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // A mid-turn tool failure used to drop everything accumulated so far,
         // leaving the caller unable to inspect, repair, or resume from the
         // partial conversation.
+        let mut turns = super::lifecycle::TurnTracker::new(messages.len());
         let outcome = self
-            .run_loop_body(state, ctx, run, status, &mut messages, streaming)
+            .run_loop_body(state, ctx, run, status, &mut messages, &mut turns, streaming)
             .await;
+        // Announce whatever the final turn appended and close it, on every
+        // exit path, before the transcript moves onto the run.
+        turns.close_turn(ctx, self.policy.capture, &messages);
         run.messages = std::mem::take(&mut messages);
         // A4: the `Collect` lane is delivered on the run, never on the
         // transcript, and on every exit path — a host that pushed
@@ -145,6 +149,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         run: &mut AgentRun,
         status: &mut HarnessRunStatus,
         messages: &mut Vec<Message>,
+        turns: &mut super::lifecycle::TurnTracker,
         streaming: bool,
     ) -> Result<LoopExit> {
         let record = ctx.emit(AgentEvent::RunStarted {
@@ -685,6 +690,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // Captured here (where the call actually starts) so the completed
             // event carries a real start time for duration-aware exporters.
             let model_started_at_ms = crate::ids::now_ms();
+            turns.start_turn(ctx, self.policy.capture, messages);
             let record = ctx.emit(AgentEvent::ModelStarted {
                 call_id: call_id.clone(),
                 model: model_name.clone(),
@@ -821,6 +827,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             status.set_last_event(record.id);
 
             messages.push(Message::Assistant(response.message.clone()));
+            turns.flush(ctx, self.policy.capture, messages);
 
             // Safe checkpoint: honor any control outcome a middleware requested
             // during this turn (for example an early-exit tool or a budget stop
@@ -1031,6 +1038,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     return Err(TinyAgentsError::EmptyResponse);
                 }
                 run.final_response = Some(response);
+                turns.close_turn(ctx, self.policy.capture, messages);
                 // Natural finish (A4): queued steering or a follow-up turns
                 // "done" into "one more turn" instead of returning.
                 if self
@@ -1076,6 +1084,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             {
                 return Ok(exit);
             }
+
+            turns.close_turn(ctx, self.policy.capture, messages);
 
             // Turn boundary (A4): every tool result of this batch is on the
             // transcript, so queued steering can be applied now — never
