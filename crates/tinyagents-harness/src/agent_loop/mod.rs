@@ -146,6 +146,9 @@ pub(crate) use stream::{StreamRunner, invoke_stream_with_runner};
 #[path = "deferred_tests.rs"]
 mod deferred_test;
 #[cfg(test)]
+#[path = "lifecycle_tests.rs"]
+mod lifecycle_test;
+#[cfg(test)]
 #[path = "model_profile_preview_tests.rs"]
 mod model_profile_preview_test;
 #[cfg(test)]

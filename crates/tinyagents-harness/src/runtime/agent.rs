@@ -424,8 +424,13 @@ impl<State: Send + Sync + 'static, Ctx: Send + Sync> Stream for AgentStream<'_, 
 /// typed details for host-owned diagnostics and policy decisions.
 fn sanitize_hosted_stream_item(mut item: AgentStreamItem) -> AgentStreamItem {
     match &mut item {
-        AgentStreamItem::Failed { error, .. } => {
+        AgentStreamItem::Failed { error, run } => {
             *error = "hosted agent invocation failed".to_string();
+            // The partial run carries its typed outcome; keep the
+            // classification, drop the raw failure text.
+            if let Some(outcome) = run.terminal.as_mut() {
+                outcome.message = error.clone();
+            }
         }
         AgentStreamItem::Event(record) => sanitize_hosted_event(record),
         AgentStreamItem::Completed(_) => {}
