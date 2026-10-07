@@ -5,17 +5,21 @@
 //! than instrument each push, [`TurnTracker`] watches the transcript length and
 //! announces whatever was appended since the last look, in order, at the points
 //! the loop already treats as boundaries. That keeps every present and future
-//! push site covered with no per-site code.
+//! push site covered with no per-site code. Mutations that are *not* appends
+//! must say so explicitly: [`TurnTracker::retract_to`] for pops and
+//! [`TurnTracker::rebase`] for in-place rewrites.
 
-use crate::context::RunContext;
-use crate::events::AgentEvent;
+use crate::events::{AgentEvent, EventSink};
 use crate::ids::CallId;
 use crate::runtime::PayloadCapture;
 use tinyinference_llm::message::Message;
 
 /// Tracks which transcript messages have been announced and which turn is open.
-#[derive(Debug)]
-pub(super) struct TurnTracker {
+///
+/// Lives on the [`RunContext`](crate::context::RunContext) so every site that
+/// mutates the transcript can reach it.
+#[derive(Debug, Default)]
+pub(crate) struct TurnTracker {
     /// Messages `[0, announced)` have been announced (or are the seed input).
     announced: usize,
     /// Number of the most recently opened turn.
@@ -24,7 +28,7 @@ pub(super) struct TurnTracker {
     open: Option<(u32, usize)>,
 }
 
-fn role_of(message: &Message) -> &'static str {
+pub(crate) fn role_of(message: &Message) -> &'static str {
     match message {
         Message::System(_) => "system",
         Message::User(_) => "user",
@@ -37,7 +41,7 @@ fn role_of(message: &Message) -> &'static str {
 impl TurnTracker {
     /// A tracker for a transcript that starts with `seed_len` input messages,
     /// which are not announced.
-    pub(super) fn new(seed_len: usize) -> Self {
+    pub(crate) fn new(seed_len: usize) -> Self {
         Self {
             announced: seed_len,
             turn: 0,
@@ -46,14 +50,18 @@ impl TurnTracker {
     }
 
     /// Announces every message appended since the last call, in order.
-    pub(super) fn flush<Ctx: Send + Sync>(
-        &mut self,
-        ctx: &RunContext<Ctx>,
-        capture: PayloadCapture,
-        messages: &[Message],
-    ) {
-        // A transcript that shrank (trimmed or replaced) re-bases the cursor.
-        self.announced = self.announced.min(messages.len());
+    pub(crate) fn flush(&mut self, events: &EventSink, capture: PayloadCapture, messages: &[Message]) {
+        // A shrunk transcript must have been reported through `retract_to` or
+        // `rebase`; clamp defensively rather than index out of range.
+        if messages.len() < self.announced {
+            tracing::warn!(
+                target: "tinyagents::agent_loop",
+                announced = self.announced,
+                len = messages.len(),
+                "[agent_loop] transcript shrank without retract_to/rebase; re-basing the lifecycle cursor"
+            );
+            self.announced = messages.len();
+        }
         for (index, message) in messages.iter().enumerate().skip(self.announced) {
             let (call_id, captured) = match message {
                 Message::Tool(tool) => (
@@ -62,42 +70,69 @@ impl TurnTracker {
                 ),
                 _ => (None, capture.model_io),
             };
-            ctx.emit(AgentEvent::MessageAppended {
+            events.emit(AgentEvent::MessageAppended {
                 role: role_of(message).to_string(),
                 index,
                 call_id,
-                message: captured
-                    .then(|| serde_json::to_value(message).unwrap_or(serde_json::Value::Null)),
+                message: captured.then(|| to_value_logged(message)),
             });
         }
         self.announced = messages.len();
     }
 
+    /// Reports that the transcript was truncated to `new_len` messages (a pop).
+    /// Emits [`AgentEvent::MessageRetracted`] for each *announced* message
+    /// removed, highest index first; removing a message that was never
+    /// announced is silent.
+    pub(crate) fn retract_to(&mut self, events: &EventSink, new_len: usize) {
+        for index in (new_len..self.announced).rev() {
+            events.emit(AgentEvent::MessageRetracted { index });
+        }
+        self.announced = self.announced.min(new_len);
+        if let Some((_, start)) = self.open.as_mut() {
+            *start = (*start).min(new_len);
+        }
+    }
+
+    /// Reports that the transcript was rewritten in place and now holds
+    /// `new_len` messages. Call [`Self::flush`] *before* the mutation so
+    /// pending appends are announced against the old transcript.
+    pub(crate) fn rebase(&mut self, events: &EventSink, new_len: usize, reason: &str) {
+        events.emit(AgentEvent::TranscriptRewritten {
+            len: new_len,
+            reason: reason.to_string(),
+        });
+        self.announced = new_len;
+        if let Some((_, start)) = self.open.as_mut() {
+            *start = (*start).min(new_len);
+        }
+    }
+
     /// Opens the next turn, first announcing pending messages and closing any
     /// turn still open (a recovery retry re-enters the model call without
     /// finishing its predecessor). Returns the new turn number.
-    pub(super) fn start_turn<Ctx: Send + Sync>(
+    pub(crate) fn start_turn(
         &mut self,
-        ctx: &RunContext<Ctx>,
+        events: &EventSink,
         capture: PayloadCapture,
         messages: &[Message],
     ) -> u32 {
-        self.close_turn(ctx, capture, messages);
+        self.close_turn(events, capture, messages);
         self.turn += 1;
         self.open = Some((self.turn, messages.len()));
-        ctx.emit(AgentEvent::TurnStarted { turn: self.turn });
+        events.emit(AgentEvent::TurnStarted { turn: self.turn });
         self.turn
     }
 
     /// Announces pending messages and closes the open turn, if any, reporting
     /// the tool results it added to the transcript.
-    pub(super) fn close_turn<Ctx: Send + Sync>(
+    pub(crate) fn close_turn(
         &mut self,
-        ctx: &RunContext<Ctx>,
+        events: &EventSink,
         capture: PayloadCapture,
         messages: &[Message],
     ) {
-        self.flush(ctx, capture, messages);
+        self.flush(events, capture, messages);
         let Some((turn, start)) = self.open.take() else {
             return;
         };
@@ -112,15 +147,27 @@ impl TurnTracker {
             .collect();
         tracing::debug!(
             target: "tinyagents::agent_loop",
-            run_id = %ctx.run_id(),
             turn,
             tool_results = tool_call_ids.len(),
             "[agent_loop] turn completed"
         );
-        ctx.emit(AgentEvent::TurnCompleted {
+        events.emit(AgentEvent::TurnCompleted {
             turn,
             tool_result_count: tool_call_ids.len(),
             tool_call_ids,
         });
     }
+}
+
+/// Serializes a value for an event payload, logging instead of silently
+/// substituting `null` when serialization fails.
+pub(crate) fn to_value_logged<T: serde::Serialize>(value: &T) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|error| {
+        tracing::warn!(
+            target: "tinyagents::agent_loop",
+            %error,
+            "[agent_loop] could not serialize an event payload; emitting null"
+        );
+        serde_json::Value::Null
+    })
 }
