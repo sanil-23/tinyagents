@@ -434,11 +434,19 @@ where
     let base = DirectModelBase {
         model: binding.model.as_ref(),
     };
-    let (mut response, wrap_control) = harness
+    let wrapped = match harness
         .middleware()
         .run_wrapped_model(ctx, app_state, request, &base)
-        .await?
-        .into_response_with_control();
+        .await
+    {
+        Ok(wrapped) => wrapped,
+        Err(error) => {
+            status.active_model_call = None;
+            ctx.active_model_call = None;
+            return Err(error);
+        }
+    };
+    let (mut response, wrap_control) = wrapped.into_response_with_control();
     if let Some(control) = wrap_control {
         ctx.request_control(control);
     }
@@ -557,7 +565,13 @@ where
     };
     loop_state.tool_calls = run.tool_calls;
     loop_state.executed_tools = run.executed_tools.clone();
-    let _ = outcome;
+    if let Err(error) = &outcome
+        && matches!(error, TinyAgentsError::LimitExceeded(_))
+    {
+        loop_state.limit_stop = true;
+        loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ToolCalls);
+    }
+    let _ = outcome?;
 
     if harness.middleware().any_should_stop_after_turn(ctx, run) {
         ctx.request_control(MiddlewareControl::JumpTo(LoopTarget::End));

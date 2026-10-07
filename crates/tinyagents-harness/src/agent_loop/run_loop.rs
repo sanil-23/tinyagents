@@ -775,11 +775,19 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // model-wrap onion, so truncated-empty recovery can compute the next
             // (doubled) budget from what was actually sent.
             let attempt_max_tokens = request.max_tokens;
-            let (mut response, wrap_control) = self
+            let wrapped = match self
                 .middleware
                 .run_wrapped_model(ctx, state, request, &base)
-                .await?
-                .into_response_with_control();
+                .await
+            {
+                Ok(wrapped) => wrapped,
+                Err(error) => {
+                    status.active_model_call = None;
+                    ctx.active_model_call = None;
+                    return Err(error);
+                }
+            };
+            let (mut response, wrap_control) = wrapped.into_response_with_control();
             // A `ModelMiddleware::wrap_model` that short-circuited with
             // `MiddlewareModelOutcome::Command` carries no real response (see
             // that variant's docs); queue its control the same way a
