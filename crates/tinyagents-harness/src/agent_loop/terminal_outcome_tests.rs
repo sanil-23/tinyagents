@@ -228,3 +228,56 @@ fn outcome_helper_is_usable_from_hosts() {
     let merged = TerminalOutcome::completed().merge(TerminalOutcome::halted("loop"));
     assert_eq!(merged.reason, TerminalReason::Halted);
 }
+
+#[tokio::test]
+async fn a_limit_exceeded_failure_carries_the_limit_kind() {
+    let harness = harness_with(Arc::new(ScriptedModel::new(vec![response(
+        vec![ToolCall::new("c1", "spin", serde_json::json!({}))],
+        "",
+    )])));
+    let ctx = RunContext::new(RunConfig::new("cap-error").with_max_model_calls(1), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("go")])
+        .await;
+    assert!(matches!(
+        partial.error,
+        Some(TinyAgentsError::LimitExceeded(_))
+    ));
+    assert_eq!(
+        partial.run.terminal.expect("outcome").reason,
+        TerminalReason::LimitReached(Some(LimitKind::ModelCalls))
+    );
+}
+
+#[tokio::test]
+async fn after_agent_middleware_can_read_the_terminal_outcome() {
+    use crate::middleware::{AgentRun, Middleware};
+    use std::sync::Mutex;
+    struct Reader(Arc<Mutex<Option<TerminalOutcome>>>);
+    #[async_trait]
+    impl Middleware<(), ()> for Reader {
+        fn name(&self) -> &str {
+            "reader"
+        }
+        async fn after_agent(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            run: &mut AgentRun,
+        ) -> crate::error::Result<()> {
+            *self.0.lock().unwrap() = run.terminal.clone();
+            Ok(())
+        }
+    }
+    let seen = Arc::new(Mutex::new(None));
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_middleware(Arc::new(Reader(seen.clone())));
+    harness
+        .invoke_default(&(), vec![Message::user("hi")])
+        .await
+        .unwrap();
+    assert_eq!(
+        seen.lock().unwrap().as_ref().map(|o| o.reason),
+        Some(TerminalReason::Completed)
+    );
+}

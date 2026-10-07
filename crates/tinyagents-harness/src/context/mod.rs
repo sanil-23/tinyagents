@@ -326,6 +326,7 @@ impl<Ctx> RunContext<Ctx> {
             terminal_observer: None,
             turns: crate::agent_loop::TurnTracker::default(),
             halted_by_guard: None,
+            last_limit: std::sync::Mutex::new(None),
             active_model_call: None,
             deferred_results: None,
             approved_calls: std::collections::HashSet::new(),
@@ -774,6 +775,14 @@ impl<Ctx> RunContext<Ctx> {
 
     /// Emits `event` on this run's event sink, returning the recorded entry.
     pub fn emit(&self, event: AgentEvent) -> EventRecord {
+        // Remember which cap tripped last, so a `LimitExceeded` failure can be
+        // classified with its kind (the error itself carries only text).
+        if let AgentEvent::LimitReached { kind } = &event {
+            *self
+                .last_limit
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(*kind);
+        }
         self.events.emit(event)
     }
 

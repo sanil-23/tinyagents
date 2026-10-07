@@ -206,6 +206,16 @@ impl TerminalOutcome {
         }
     }
 
+    /// Fills in the kind of a [`TerminalReason::LimitReached`] whose kind was
+    /// not known when it was classified (a `LimitExceeded` error carries only
+    /// text). Other outcomes are returned unchanged.
+    pub fn with_limit_kind(mut self, kind: Option<LimitKind>) -> Self {
+        if self.reason == TerminalReason::LimitReached(None) {
+            self.reason = TerminalReason::LimitReached(kind);
+        }
+        self
+    }
+
     /// Records whether a provider call had started.
     pub fn with_provider_started(mut self, started: bool) -> Self {
         self.provider_started = started;

@@ -468,7 +468,12 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 } else {
                     TimeoutPhase::BeforeProvider
                 };
-                let outcome = TerminalOutcome::from_error(&error, site);
+                let last_limit = *ctx
+                    .last_limit
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let outcome =
+                    TerminalOutcome::from_error(&error, site).with_limit_kind(last_limit);
                 terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,

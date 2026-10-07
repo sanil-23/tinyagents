@@ -494,6 +494,8 @@ pub struct RunContext<Ctx = ()> {
     /// Set by a no-progress / repeat guard that paused the run, holding its
     /// root-cause summary, so the loop can report `TerminalReason::Halted`.
     pub(crate) halted_by_guard: Option<String>,
+    /// The kind of the most recent `LimitReached` event this run emitted.
+    pub(crate) last_limit: std::sync::Mutex<Option<crate::events::LimitKind>>,
     /// The [`CallId`] the agent loop minted for the model call currently in
     /// flight through the model-wrap middleware onion, mirroring
     /// [`crate::events::HarnessRunStatus::active_model_call`].

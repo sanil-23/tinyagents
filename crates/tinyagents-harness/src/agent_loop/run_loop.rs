@@ -71,9 +71,6 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
         };
 
-        status.mark_running(HarnessPhase::Middleware);
-        self.middleware.run_after_agent(ctx, state, run).await?;
-
         // One typed answer to "how did the loop end", derived once here so the
         // event, `run.terminal` and the legacy fields cannot disagree.
         let mut terminal = TerminalOutcome::from_loop_exit(&exit, run.model_calls > 0);
@@ -84,6 +81,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             terminal = TerminalOutcome::halted(summary).with_provider_started(run.model_calls > 0);
         }
         run.terminal = Some(terminal.clone());
+
+        status.mark_running(HarnessPhase::Middleware);
+        self.middleware.run_after_agent(ctx, state, run).await?;
 
         match exit {
             LoopExit::Finished | LoopExit::LimitStop(_) => {
