@@ -9,6 +9,7 @@
 //! must say so explicitly: [`TurnTracker::retract_to`] for pops and
 //! [`TurnTracker::rebase`] for in-place rewrites.
 
+use crate::context::RunContext;
 use crate::events::{AgentEvent, EventSink};
 use crate::ids::CallId;
 use crate::runtime::PayloadCapture;
@@ -170,4 +171,31 @@ pub(crate) fn to_value_logged<T: serde::Serialize>(value: &T) -> serde_json::Val
         );
         serde_json::Value::Null
     })
+}
+
+impl<Ctx> RunContext<Ctx> {
+    /// Announces transcript appends not yet announced.
+    pub(crate) fn flush_transcript(&mut self, capture: PayloadCapture, messages: &[Message]) {
+        self.turns.flush(&self.events, capture, messages);
+    }
+
+    /// Opens the next turn (see [`TurnTracker::start_turn`]).
+    pub(crate) fn start_turn(&mut self, capture: PayloadCapture, messages: &[Message]) -> u32 {
+        self.turns.start_turn(&self.events, capture, messages)
+    }
+
+    /// Closes the open turn (see [`TurnTracker::close_turn`]).
+    pub(crate) fn close_turn(&mut self, capture: PayloadCapture, messages: &[Message]) {
+        self.turns.close_turn(&self.events, capture, messages);
+    }
+
+    /// Reports a pop: the transcript now holds `new_len` messages.
+    pub(crate) fn retract_transcript(&mut self, new_len: usize) {
+        self.turns.retract_to(&self.events, new_len);
+    }
+
+    /// Reports an in-place rewrite: the transcript now holds `new_len` messages.
+    pub(crate) fn rebase_transcript(&mut self, new_len: usize, reason: &str) {
+        self.turns.rebase(&self.events, new_len, reason);
+    }
 }

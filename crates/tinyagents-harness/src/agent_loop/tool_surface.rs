@@ -183,9 +183,9 @@ impl ToolSurface {
         messages: &mut Vec<Message>,
         host_allows: &(dyn Fn(&str) -> bool + Sync),
         patch_profile: Option<&tinyinference_llm::model::ModelProfile>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if harness.toolset.is_none() {
-            return Ok(());
+            return Ok(false);
         }
         let live_schemas = harness.direct_tool_schemas(ctx, host_allows).await?;
         if let Some(patch) = tool_changes::diff_tool_set(&self.declared_tool_schemas, &live_schemas)

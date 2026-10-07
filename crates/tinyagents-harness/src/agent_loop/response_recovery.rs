@@ -65,6 +65,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                         "[agent_loop] length-truncated tool calls keep recurring; truncated-tool-call retry budget exhausted"
                     );
                     messages.pop();
+                    ctx.retract_transcript(messages.len());
                     return Err(TinyAgentsError::LimitExceeded(format!(
                         "run `{}` stopped: {} consecutive \
                              retries of a tool call truncated by the output token limit did not \
@@ -189,6 +190,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         {
             turn_recovery.withheld_call_nudges_used += 1;
             messages.pop();
+            ctx.retract_transcript(messages.len());
             tracing::info!(
                 target: "tinyagents::agent_loop",
                 run_id = %ctx.run_id(),
@@ -232,6 +234,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // Drop the useless empty assistant row appended above so the
             // retry re-sends the identical transcript.
             messages.pop();
+            ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_retries_used += 1;
             // Grow the token budget when the request set one: double it,
             // clamped at 4x the original cap. An unset budget stays unset
@@ -258,6 +261,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && ctx.limits.remaining_model_calls() > 0
         {
             messages.pop();
+            ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_nudges_used += 1;
             let nudge = if tools_available_this_turn {
                 TRUNCATED_EMPTY_TOOL_NUDGE
@@ -309,6 +313,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && ctx.limits.remaining_model_calls() > 0
         {
             messages.pop();
+            ctx.retract_transcript(messages.len());
             turn_recovery.empty_response_retries_used += 1;
             tracing::info!(
                 target: "tinyagents::agent_loop",

@@ -324,6 +324,7 @@ impl<Ctx> RunContext<Ctx> {
             host_agent_id: None,
             host_authority: None,
             terminal_observer: None,
+            turns: crate::agent_loop::TurnTracker::default(),
             active_model_call: None,
             deferred_results: None,
             approved_calls: std::collections::HashSet::new(),

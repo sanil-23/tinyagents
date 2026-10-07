@@ -488,6 +488,9 @@ pub struct RunContext<Ctx = ()> {
     /// Runtime-owned terminal lifecycle callback, consumed exactly once by the
     /// agent-loop guard even when the driving future is cancelled or dropped.
     pub(crate) terminal_observer: Option<TerminalObserver>,
+    /// Lifecycle cursor over the working transcript: which messages were
+    /// announced and which turn is open (see `agent_loop::lifecycle`).
+    pub(crate) turns: crate::agent_loop::TurnTracker,
     /// The [`CallId`] the agent loop minted for the model call currently in
     /// flight through the model-wrap middleware onion, mirroring
     /// [`crate::events::HarnessRunStatus::active_model_call`].
