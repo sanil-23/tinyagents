@@ -74,6 +74,8 @@ pub struct LoopState {
     /// `TerminalReason::LimitReached` instead of a plain completion.
     #[serde(default)]
     pub(crate) limit_stop: bool,
+    #[serde(default)]
+    pub(crate) limit_kind: Option<tinyagents_harness::events::LimitKind>,
 }
 
 impl LoopState {

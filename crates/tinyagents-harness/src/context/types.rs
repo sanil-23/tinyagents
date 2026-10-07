@@ -509,6 +509,7 @@ pub struct RunContext<Ctx = ()> {
     /// `None` outside that window, and always `None` for a caller that never
     /// goes through the agent loop.
     pub active_model_call: Option<CallId>,
+    pub(crate) provider_started: bool,
     /// Resolutions for the deferred tool calls left pending on the transcript
     /// this run is resuming (A2). Taken by the agent loop before its first
     /// model call and applied to the unanswered tool calls on the last

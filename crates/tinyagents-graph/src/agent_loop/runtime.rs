@@ -305,6 +305,8 @@ where
         ) {
             loop_state.finished = true;
             loop_state.limit_stop = true;
+            loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ModelCalls);
+            loop_state.limit_stop = true;
             if loop_state.final_text.is_none() {
                 loop_state.final_text = Some(last_assistant_text(&loop_state.messages));
             }

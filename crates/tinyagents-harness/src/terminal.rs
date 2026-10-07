@@ -136,7 +136,7 @@ impl TerminalReason {
     }
 
     /// Precedence rank used by [`TerminalOutcome::merge`]; lower wins.
-    fn rank(self) -> u8 {
+    fn rank(&self) -> u8 {
         match self {
             Self::Cancelled => 0,
             Self::Timeout => 1,
@@ -271,7 +271,10 @@ impl TerminalOutcome {
             E::ApprovalRequired { .. } | E::CallDeferred { .. } => {
                 Self::new(TerminalReason::Deferred, message)
             }
-            E::Interrupted { .. } => Self::new(TerminalReason::Paused, message),
+            E::Interrupted { node, .. } if node == "steering-pause" => {
+                Self::new(TerminalReason::Paused, message)
+            }
+            E::Interrupted { .. } => Self::new(TerminalReason::Internal, message),
             _ => Self::new(TerminalReason::Internal, message),
         };
         // A provider-call timeout implies a provider call started.
@@ -285,7 +288,11 @@ impl TerminalOutcome {
         let outcome = match exit {
             LoopExit::Finished => Self::completed(),
             LoopExit::LimitStop(kind) => Self::limit_reached(
-                Some(*kind),
+                Some(match kind {
+                    crate::limits::LimitKind::ModelCalls => LimitKind::ModelCalls,
+                    crate::limits::LimitKind::ToolCalls => LimitKind::ToolCalls,
+                    crate::limits::LimitKind::WallClock => LimitKind::WallClock,
+                }),
                 format!(
                     "stopped with the partial run: {} limit reached",
                     kind.as_str()

@@ -85,6 +85,7 @@ where
         ctx.reset_turn_tracker(loop_state.messages.len());
         let mut current: &str = node::PLAN;
         let mut limit_stop = false;
+        let mut limit_kind = None;
 
         let outcome = loop {
             // Keeps `run.messages` a running snapshot of the transcript as
@@ -169,6 +170,7 @@ where
                         }
                     };
                     limit_stop |= loop_state.limit_stop;
+                    limit_kind = loop_state.limit_kind;
                     let Some(target) = command.goto.first() else {
                         break Err(TinyAgentsError::Validation(
                             "GraphLoopDriver: loop node's command carried no route".to_string(),
@@ -205,7 +207,7 @@ where
             Ok(None) => {
                 let reason = if limit_stop {
                     TerminalOutcome::limit_reached(
-                        Some(LimitKind::ModelCalls),
+                        limit_kind,
                         "stopped with the partial run: model_calls limit reached",
                     )
                 } else {
@@ -232,7 +234,14 @@ where
                 };
                 Some(outcome.with_provider_started(run.model_calls > 0))
             }
-            Err(_) => None,
+            Err(error) => Some(TerminalOutcome::from_error(
+                &error,
+                if ctx.provider_started() {
+                    tinyagents_harness::terminal::TimeoutPhase::AfterTurn
+                } else {
+                    tinyagents_harness::terminal::TimeoutPhase::BeforeProvider
+                },
+            )),
         };
         run.terminal = terminal.clone();
         status.mark_running(HarnessPhase::Middleware);

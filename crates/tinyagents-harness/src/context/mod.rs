@@ -328,6 +328,7 @@ impl<Ctx> RunContext<Ctx> {
             halted_by_guard: None,
             last_limit: std::sync::Mutex::new(None),
             active_model_call: None,
+            provider_started: false,
             deferred_results: None,
             approved_calls: std::collections::HashSet::new(),
             refusal_metadata: std::collections::HashMap::new(),
@@ -791,6 +792,14 @@ impl<Ctx> RunContext<Ctx> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
+    }
+
+    pub(crate) fn mark_provider_started(&mut self) {
+        self.provider_started = true;
+    }
+
+    pub(crate) fn provider_started(&self) -> bool {
+        self.provider_started
     }
 
     /// Takes the repeat-progress guard's halt summary, if one was latched.

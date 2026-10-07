@@ -31,14 +31,14 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         let count = items.len();
         let first_index = messages.len();
         // Payloads follow the capture policy, like every other event.
-        let captured = if self.policy.capture.model_io {
-            items
-                .iter()
-                .map(super::lifecycle::to_value_logged)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let captured = items
+            .iter()
+            .filter(|message| match message {
+                Message::Tool(_) => self.policy.capture.tool_io,
+                _ => self.policy.capture.model_io,
+            })
+            .map(super::lifecycle::to_value_logged)
+            .collect();
         messages.extend(items);
         let record = ctx.emit(AgentEvent::QueuedMessageApplied {
             lane,
