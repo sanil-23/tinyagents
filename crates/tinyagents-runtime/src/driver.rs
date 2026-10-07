@@ -29,6 +29,11 @@ pub struct DriverOutcome {
     pub partial: Option<TranscriptPartial>,
     /// Whether the driver ended at an interruptible point.
     pub interrupted: bool,
+    /// Typed classification of how the run ended, when the driver has one
+    /// ([`HarnessDriver`] always does). Preferred by the session over the
+    /// outcome it would derive from `interrupted`, so a run that stopped on a
+    /// cap or a deferral is not reported as `Completed`.
+    pub outcome: Option<tinyagents_harness::terminal::TerminalOutcome>,
 }
 
 /// A driver error which may retain model history and display-only partial text.
@@ -129,6 +134,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
                 .and(output)
                 .map(TranscriptPartial::new),
             interrupted: partial.run.paused.is_some(),
+            outcome: terminal.clone(),
         };
         match partial.error {
             Some(error) => Err(DriverFailure {

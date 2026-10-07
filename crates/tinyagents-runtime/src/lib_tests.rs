@@ -80,6 +80,7 @@ impl Tool for RegisteredTool {
 
 fn outcome(history: Vec<Message>) -> DriverOutcome {
     DriverOutcome {
+        outcome: None,
         history,
         output: Some("ok".into()),
         partial: None,
@@ -599,6 +600,7 @@ async fn persistence_failure_rolls_back_and_a_partial_never_falls_back_to_two_wr
 
     let (locator, history) = locator(None);
     let partial = DriverOutcome {
+        outcome: None,
         history: vec![Message::assistant("recoverable")],
         output: None,
         partial: Some(crate::TranscriptPartial::new("display only")),
@@ -767,6 +769,7 @@ async fn file_history_commits_partial_model_history_and_display_only_partial_tog
         ..Default::default()
     });
     let partial = DriverOutcome {
+        outcome: None,
         history: vec![Message::assistant("recoverable")],
         output: None,
         partial: Some(crate::TranscriptPartial::new("display partial")),
@@ -866,6 +869,7 @@ async fn partial_usage_error_leaves_the_session_and_target_entirely_uncommitted(
         ..Default::default()
     });
     let partial = DriverOutcome {
+        outcome: None,
         history: vec![Message::assistant("recoverable")],
         output: None,
         partial: Some(crate::TranscriptPartial::new("display partial")),
@@ -2437,6 +2441,7 @@ fn session_turn_options(resume: ResumeMode, thread: &str) -> TurnOptions {
 
 fn session_outcome(history: Vec<Message>, output: &str) -> DriverOutcome {
     DriverOutcome {
+        outcome: None,
         history,
         output: Some(output.into()),
         partial: None,
@@ -4317,4 +4322,33 @@ fn session_terminal_derives_an_outcome() {
     let failed = SessionTerminal::Failed("x".into()).outcome();
     assert_eq!(failed.class, TerminalClass::Failure);
     assert_eq!(failed.message, "x");
+}
+
+#[tokio::test]
+async fn a_drivers_typed_success_outcome_is_not_flattened_to_completed() {
+    use tinyagents_harness::terminal::{TerminalOutcome, TerminalReason};
+    let hook = outcome_hook();
+    let capped = TerminalOutcome::limit_reached(
+        Some(tinyagents_harness::events::LimitKind::ModelCalls),
+        "stopped with the partial run",
+    );
+    let mut driver_outcome = outcome(vec![Message::assistant("partial")]);
+    driver_outcome.outcome = Some(capped.clone());
+    let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Ok(driver_outcome)])))
+        .hooks(hook.clone())
+        .build()
+        .unwrap();
+    session
+        .turn(
+            SessionTurnRequest::new(Message::user("x")),
+            TurnOptions::default(),
+        )
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    let outcomes = hook.outcomes.lock().unwrap();
+    assert_eq!(outcomes.as_slice(), [capped]);
+    assert_ne!(outcomes[0].reason, TerminalReason::Completed);
 }

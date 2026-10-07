@@ -603,7 +603,7 @@ impl<C: Clone + Send + Sync + 'static> Session<C> {
             _ = cancellation.cancelled() => return Err(RuntimeError::Cancelled),
             result = self.driver.execute(DriverRequest { history: input, tools, run_context, stream }) => result,
         };
-        let outcome = match driver_result {
+        let mut outcome = match driver_result {
             Ok(outcome) => outcome,
             Err(failure) => {
                 if let Some(partial) = failure.partial {
@@ -633,6 +633,9 @@ impl<C: Clone + Send + Sync + 'static> Session<C> {
                 return Err(failure.error);
             }
         };
+        // Kept for `finalize_commit`: only a *committed* turn reports the
+        // driver's success classification; a later failure uses its own.
+        terminal_guard.driver_success_outcome = outcome.outcome.take();
         let candidate = Self::with_prefix_snapshot(&prefix, outcome.history);
         let committed = SessionTurnOutcome {
             history: candidate.clone(),
@@ -1054,6 +1057,9 @@ struct TerminalGuard<C: Clone + Send + Sync + 'static> {
     terminal: Option<SessionTerminal>,
     /// The driver's own typed classification of a failure, when it supplied one.
     outcome: Option<TerminalOutcome>,
+    /// The driver's typed classification of a run it returned successfully;
+    /// used only once the turn commits.
+    driver_success_outcome: Option<TerminalOutcome>,
     /// `true` until a real terminal is set: the drop-time default means the
     /// caller abandoned the turn, which is a cancellation.
     abandoned: bool,
@@ -1066,6 +1072,7 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
             hooks,
             terminal: Some(SessionTerminal::Failed("session turn dropped".into())),
             outcome: None,
+            driver_success_outcome: None,
             abandoned: true,
             committed: false,
         }
@@ -1096,7 +1103,10 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
 
     fn finalize_commit(&mut self, receipt: CommitReceipt<C>) -> tokio::task::JoinHandle<()> {
         let terminal = SessionTerminal::Completed(receipt.outcome.clone());
-        let outcome = terminal.outcome();
+        let outcome = self
+            .driver_success_outcome
+            .take()
+            .unwrap_or_else(|| terminal.outcome());
         // Removing the guard's terminal transfers exactly-once ownership to
         // the finalizer. `finish` and `Drop` then become no-ops for this turn.
         self.terminal = None;
