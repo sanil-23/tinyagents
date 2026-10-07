@@ -459,7 +459,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             Err(error) => {
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,
-                    error: error.to_string(),
+                    error: error.to_string(), outcome: None
                 });
                 status.set_last_event(record.id);
                 status.mark_failed(error.to_string());

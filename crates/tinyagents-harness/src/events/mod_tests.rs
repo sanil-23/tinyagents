@@ -56,7 +56,7 @@ fn smoke_event_sink_records_events() {
     assert_eq!(recorder.len(), 1);
 
     let _ = sink.emit(AgentEvent::RunCompleted {
-        run_id: run_id.clone(),
+        run_id: run_id.clone(), outcome: None
     });
     assert_eq!(recorder.len(), 2);
 
@@ -101,7 +101,7 @@ fn smoke_event_journal_replay() {
         thread_id: None,
     });
     journal.append(AgentEvent::RunCompleted {
-        run_id: run_id.clone(),
+        run_id: run_id.clone(), outcome: None
     });
 
     assert_eq!(journal.len(), 2);

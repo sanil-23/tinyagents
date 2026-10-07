@@ -75,7 +75,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     );
                 }
                 let record = ctx.emit(AgentEvent::RunCompleted {
-                    run_id: ctx.run_id().clone(),
+                    run_id: ctx.run_id().clone(), outcome: None
                 });
                 status.set_last_event(record.id);
             }
