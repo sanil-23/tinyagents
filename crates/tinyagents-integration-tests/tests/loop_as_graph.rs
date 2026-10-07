@@ -671,3 +671,62 @@ async fn model_cap_stop_reports_the_same_terminal_outcome_in_both_engines() {
         );
     }
 }
+
+struct BoomModel;
+
+#[async_trait::async_trait]
+impl tinyinference_llm::model::ChatModel<()> for BoomModel {
+    async fn invoke(
+        &self,
+        _: &(),
+        _: tinyinference_llm::model::ModelRequest,
+    ) -> tinyinference_llm::Result<ModelResponse> {
+        Err(tinyinference_llm::Error::Model("model boom".into()))
+    }
+}
+
+struct FailingAfterAgent;
+
+#[async_trait::async_trait]
+impl tinyagents_harness::middleware::Middleware<(), ()> for FailingAfterAgent {
+    fn name(&self) -> &str {
+        "failing_after_agent"
+    }
+
+    async fn after_agent(
+        &self,
+        _ctx: &mut RunContext<()>,
+        _state: &(),
+        _run: &mut tinyagents_harness::agent_loop::AgentRun,
+    ) -> tinyagents_harness::Result<()> {
+        Err(TinyAgentsError::Middleware("cleanup boom".into()))
+    }
+}
+
+/// When the run already failed, a failing `after_agent` hook must not replace
+/// the originating error, in either engine.
+#[tokio::test]
+async fn a_failing_after_agent_keeps_the_original_error_in_both_engines() {
+    for execution in [LoopExecution::Direct, LoopExecution::Graph] {
+        let mut harness: AgentHarness<()> = AgentHarness::new();
+        harness
+            .register_model("mock", Arc::new(BoomModel))
+            .set_default_model("mock");
+        if matches!(execution, LoopExecution::Graph) {
+            harness.with_loop_driver(Arc::new(GraphLoopDriver::new()));
+        }
+        harness.with_policy(RunPolicy {
+            execution,
+            ..RunPolicy::default()
+        });
+        harness.push_middleware(Arc::new(FailingAfterAgent));
+        let error = harness
+            .invoke_default(&(), vec![Message::user("go")])
+            .await
+            .expect_err("the run fails");
+        assert!(
+            error.to_string().contains("model boom"),
+            "{execution:?}: {error}"
+        );
+    }
+}
