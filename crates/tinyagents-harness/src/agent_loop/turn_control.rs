@@ -34,7 +34,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         let captured = if self.policy.capture.model_io {
             items
                 .iter()
-                .map(|item| serde_json::to_value(item).unwrap_or(serde_json::Value::Null))
+                .map(super::lifecycle::to_value_logged)
                 .collect()
         } else {
             Vec::new()
