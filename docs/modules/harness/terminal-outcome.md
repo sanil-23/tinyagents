@@ -20,9 +20,17 @@ are unchanged, so existing hosts keep working. A paused or deferred run emits
 no `RunCompleted`; its outcome is on `AgentRun::terminal` (`Suspended`).
 
 `CallTimeout` (one wedged call) is `ProviderFailed(Some(Timeout))` with class
-`Timeout`; only the run's own deadline is `Timeout`. `Halted` is built by hosts
-with `TerminalOutcome::halted(summary)`: the repeat-progress guard pauses the
-run, so the loop cannot tell it apart from a steering pause.
+`Timeout`; only the run's own deadline is `Timeout`. `Halted` is reported when
+the repeat-progress guard stops the run: the guard still pauses (so `run.paused`
+is set and no `RunCompleted` is emitted) and marks the run, and the loop
+reports `Halted` with the guard's summary instead of `Paused`. A
+`LimitExceeded` failure carries the `LimitKind` of the cap that tripped last.
+`AgentRun::terminal` is set before `after_agent` middleware runs. The runtime's
+`DriverOutcome::outcome` lets a session report a capped or deferred run as such
+rather than `Completed`.
+
+The loop itself yields exactly one outcome per run; `merge` is for hosts that
+race several signals (a cancel against a deadline, a guard against a limit).
 
 ### Merge precedence
 
@@ -49,8 +57,20 @@ outcomes (earlier wins ties; `provider_started` is OR-ed):
   appended to the working transcript, in order, at turn boundaries and run
   exit (the seed input is not announced). `message` is populated only under
   the payload-capture policy (`model_io`, or `tool_io` for tool messages).
+- `MessageRetracted { index }` is emitted (highest index first) when an
+  announced message is popped from the transcript, for example an unusable
+  reply dropped before a retry or recovery nudge. `TranscriptRewritten { len,
+  reason }` is emitted when the transcript is rewritten in place (a tool-set
+  change folded into, or inserted before, the leading system message). Folding
+  these with `MessageAppended` reproduces the transcript's role sequence.
+  Transcript mutations that are not appends must call
+  `RunContext::retract_transcript` / `rebase_transcript`.
+- Host-budget compression rewrites only the outgoing request, never the
+  transcript, so it emits neither.
 - `QueuedMessageApplied` now also reports `first_index` and, under
   `model_io`, the applied `messages`.
+
+The graph driver does not emit the turn/message events yet.
 
 Not wired: the block codec in `stream/frame.rs` is still unused by the loop;
 the loop streams `MessageDelta`, not `ModelStreamItem` blocks.
