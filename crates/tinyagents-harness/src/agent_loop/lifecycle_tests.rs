@@ -419,7 +419,7 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
         "",
     );
     let mut harness: AgentHarness<()> = AgentHarness::new();
-    harness.register_model("mock", Arc::new(ScriptedModel::new(vec![mixed, last])));
+    harness.register_model("mock", Arc::new(ScriptedModel::new(vec![mixed, last.clone(), last])));
     harness.register_tool(Arc::new(EchoTool));
     harness.with_policy(RunPolicy {
         end_strategy: crate::runtime::EndStrategy::Exhaustive,
