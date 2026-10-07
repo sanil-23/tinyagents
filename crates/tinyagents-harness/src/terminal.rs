@@ -119,35 +119,10 @@ pub enum TerminalReason {
 
 impl TerminalReason {
     /// The [`TerminalClass`] this reason belongs to.
-    pub fn class(self) -> TerminalClass {
-        match self {
-            Self::Completed => TerminalClass::Success,
-            Self::Timeout | Self::ProviderFailed(Some(FailoverReason::Timeout)) => {
-                TerminalClass::Timeout
-            }
-            Self::Cancelled => TerminalClass::Cancellation,
-            Self::Paused | Self::Deferred => TerminalClass::Suspended,
-            Self::LimitReached(_)
-            | Self::Halted
-            | Self::ProviderFailed(_)
-            | Self::ToolFailed
-            | Self::Internal => TerminalClass::Failure,
-        }
-    }
+    pub fn class(self) -> TerminalClass { todo!() }
 
     /// Precedence rank used by [`TerminalOutcome::merge`]; lower wins.
-    fn rank(self) -> u8 {
-        match self {
-            Self::Cancelled => 0,
-            Self::Timeout => 1,
-            Self::ProviderFailed(Some(FailoverReason::Timeout)) => 2,
-            Self::LimitReached(_) => 3,
-            Self::Halted => 4,
-            Self::ProviderFailed(_) | Self::ToolFailed | Self::Internal => 5,
-            Self::Paused | Self::Deferred => 6,
-            Self::Completed => 7,
-        }
-    }
+    fn rank(self) -> u8 { todo!() }
 }
 
 /// The structured answer to "how and why did this run end".
@@ -199,12 +174,7 @@ impl TerminalOutcome {
 
     /// A tripped run cap. [`LimitKind::WallClock`] is the run deadline, so it
     /// maps to [`TerminalReason::Timeout`] rather than a limit.
-    pub fn limit_reached(kind: Option<LimitKind>, message: impl Into<String>) -> Self {
-        match kind {
-            Some(LimitKind::WallClock) => Self::new(TerminalReason::Timeout, message),
-            kind => Self::new(TerminalReason::LimitReached(kind), message),
-        }
-    }
+    pub fn limit_reached(kind: Option<LimitKind>, message: impl Into<String>) -> Self { todo!() }
 
     /// Records whether a provider call had started.
     pub fn with_provider_started(mut self, started: bool) -> Self {
@@ -220,86 +190,16 @@ impl TerminalOutcome {
 
     /// Classifies `error`. `site` is where the run stood when the error
     /// surfaced; it sets `provider_started` and, for timeouts, the phase.
-    pub fn from_error(error: &TinyAgentsError, site: TimeoutPhase) -> Self {
-        use TinyAgentsError as E;
-        let message = error.to_string();
-        let provider_started = site != TimeoutPhase::BeforeProvider;
-        let outcome = match error {
-            E::Cancelled => Self::new(TerminalReason::Cancelled, message),
-            E::Timeout(_) => Self::new(TerminalReason::Timeout, message).with_timeout_phase(site),
-            E::CallTimeout(_) => Self::new(
-                TerminalReason::ProviderFailed(Some(FailoverReason::Timeout)),
-                message,
-            )
-            .with_timeout_phase(TimeoutPhase::Provider),
-            E::Provider(_)
-            | E::Model(_)
-            | E::ContextOverflow { .. }
-            | E::ModelNotFound(_)
-            | E::EmptyResponse
-            | E::GenerationStalled
-            | E::SummarizationUsage { .. } => Self::new(
-                TerminalReason::ProviderFailed(Some(FailoverReason::classify(error))),
-                message,
-            ),
-            E::Tool(_) | E::ToolFailed(_) | E::ToolNotFound(_) | E::ModelRetry(_) => {
-                Self::new(TerminalReason::ToolFailed, message)
-            }
-            E::LimitExceeded(_)
-            | E::RecursionLimit(_)
-            | E::SubAgentDepth(_)
-            | E::NodeVisitLimit { .. } => Self::new(TerminalReason::LimitReached(None), message),
-            E::ApprovalRequired { .. } | E::CallDeferred { .. } => {
-                Self::new(TerminalReason::Deferred, message)
-            }
-            E::Interrupted { .. } => Self::new(TerminalReason::Paused, message),
-            _ => Self::new(TerminalReason::Internal, message),
-        };
-        // A provider-call timeout implies a provider call started.
-        let started = provider_started || outcome.timeout_phase == Some(TimeoutPhase::Provider);
-        outcome.with_provider_started(started)
-    }
+    pub fn from_error(error: &TinyAgentsError, site: TimeoutPhase) -> Self { todo!() }
 
     /// Maps the loop's own deliberate exits. `provider_started` is whether any
     /// model call had been dispatched.
-    pub(crate) fn from_loop_exit(exit: &LoopExit, provider_started: bool) -> Self {
-        let outcome = match exit {
-            LoopExit::Finished => Self::completed(),
-            LoopExit::LimitStop(kind) => Self::limit_reached(
-                Some(*kind),
-                format!("stopped with the partial run: {} limit reached", kind.as_str()),
-            ),
-            LoopExit::Paused(pause) => Self::new(
-                TerminalReason::Paused,
-                pause
-                    .reason
-                    .clone()
-                    .unwrap_or_else(|| format!("paused at checkpoint {}", pause.paused_at_checkpoint)),
-            ),
-            LoopExit::Deferred(requests) => Self::new(
-                TerminalReason::Deferred,
-                format!(
-                    "{} approval(s), {} external call(s) pending",
-                    requests.approvals.len(),
-                    requests.calls.len()
-                ),
-            ),
-        };
-        outcome.with_provider_started(provider_started)
-    }
+    pub(crate) fn from_loop_exit(exit: &LoopExit, provider_started: bool) -> Self { todo!() }
 
     /// Merges two competing outcomes, keeping the one with higher precedence
     /// (see the [module docs](self)). `self` wins ties. `provider_started` is
     /// the OR of both.
-    pub fn merge(self, other: Self) -> Self {
-        let started = self.provider_started || other.provider_started;
-        let winner = if other.reason.rank() < self.reason.rank() {
-            other
-        } else {
-            self
-        };
-        winner.with_provider_started(started)
-    }
+    pub fn merge(self, other: Self) -> Self { todo!() }
 }
 
 #[cfg(test)]
