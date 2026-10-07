@@ -214,8 +214,11 @@ where
         // interrupt.
         match outcome {
             Ok(None) => {
+                let outcome = TerminalOutcome::completed().with_provider_started(run.model_calls > 0);
+                run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),
+                    outcome: Some(outcome),
                 });
                 status.set_last_event(record.id);
                 Ok(())
@@ -234,6 +237,15 @@ where
                         .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
                 });
                 status.set_last_event(record.id);
+                run.terminal = Some(
+                    TerminalOutcome::new(
+                        TerminalReason::Paused,
+                        reason
+                            .clone()
+                            .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
+                    )
+                    .with_provider_started(run.model_calls > 0),
+                );
                 run.paused = Some(PauseState {
                     reason,
                     paused_at_checkpoint: 0,
