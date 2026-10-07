@@ -85,7 +85,8 @@ fn provider_errors_carry_the_failover_reason() {
     assert_eq!(o.class, TerminalClass::Failure);
     assert_eq!(o.timeout_phase, None);
 
-    let empty = TerminalOutcome::from_error(&TinyAgentsError::EmptyResponse, TimeoutPhase::Provider);
+    let empty =
+        TerminalOutcome::from_error(&TinyAgentsError::EmptyResponse, TimeoutPhase::Provider);
     assert_eq!(
         empty.reason,
         TerminalReason::ProviderFailed(Some(FailoverReason::EmptyResponse))
@@ -141,7 +142,11 @@ fn loop_exits_map() {
     assert!(limit.message.contains("tool_calls"));
 
     let wall = TerminalOutcome::from_loop_exit(&LoopExit::LimitStop(LimitKind::WallClock), true);
-    assert_eq!(wall.reason, TerminalReason::Timeout, "wall clock is the run deadline");
+    assert_eq!(
+        wall.reason,
+        TerminalReason::Timeout,
+        "wall clock is the run deadline"
+    );
     assert_eq!(wall.class, TerminalClass::Timeout);
 
     let paused = TerminalOutcome::from_loop_exit(
@@ -192,13 +197,15 @@ fn merge_follows_the_documented_precedence() {
 #[test]
 fn merge_ties_keep_the_earlier_and_or_provider_started() {
     let first = TerminalOutcome::new(TerminalReason::ToolFailed, "first");
-    let second = TerminalOutcome::new(TerminalReason::Internal, "second").with_provider_started(true);
+    let second =
+        TerminalOutcome::new(TerminalReason::Internal, "second").with_provider_started(true);
     let merged = first.merge(second);
     assert_eq!(merged.message, "first");
     assert!(merged.provider_started, "provider_started is OR-ed");
 
     let cancel = TerminalOutcome::new(TerminalReason::Cancelled, "c");
-    let merged = cancel.merge(TerminalOutcome::new(TerminalReason::Completed, "").with_provider_started(true));
+    let merged = cancel
+        .merge(TerminalOutcome::new(TerminalReason::Completed, "").with_provider_started(true));
     assert_eq!(merged.reason, TerminalReason::Cancelled);
     assert!(merged.provider_started);
 }
@@ -218,11 +225,22 @@ fn serde_round_trip_and_wire_shape() {
 
     let limit = TerminalOutcome::limit_reached(Some(LimitKind::ModelCalls), "cap");
     let json = serde_json::to_value(&limit).unwrap();
-    assert_eq!(json["reason"], serde_json::json!({"limit_reached": "model_calls"}));
+    assert_eq!(
+        json["reason"],
+        serde_json::json!({"limit_reached": "model_calls"})
+    );
     assert!(json.get("timeout_phase").is_none());
-    assert_eq!(serde_json::from_value::<TerminalOutcome>(json).unwrap(), limit);
+    assert_eq!(
+        serde_json::from_value::<TerminalOutcome>(json).unwrap(),
+        limit
+    );
 
-    let provider = out(TerminalReason::ProviderFailed(Some(FailoverReason::RateLimit)));
+    let provider = out(TerminalReason::ProviderFailed(Some(
+        FailoverReason::RateLimit,
+    )));
     let json = serde_json::to_value(&provider).unwrap();
-    assert_eq!(json["reason"], serde_json::json!({"provider_failed": "rate_limit"}));
+    assert_eq!(
+        json["reason"],
+        serde_json::json!({"provider_failed": "rate_limit"})
+    );
 }
