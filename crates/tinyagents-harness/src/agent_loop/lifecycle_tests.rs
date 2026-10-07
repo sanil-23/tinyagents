@@ -244,3 +244,163 @@ async fn queued_message_applied_carries_the_applied_messages() {
     // The same message is also announced as an ordinary transcript append.
     assert!(lifecycle(&events).contains(&"message:3:user".to_string()));
 }
+
+// ── Transcript mirroring ────────────────────────────────────────────────────
+
+/// Folds the lifecycle events into a role list the way a consumer mirroring
+/// the transcript would. `?` marks messages known only by position (after a
+/// rewrite).
+pub(super) fn mirror_roles(events: &[AgentEvent], seed: &[Message]) -> Vec<String> {
+    let mut roles: Vec<String> = seed
+        .iter()
+        .map(|m| match m {
+            Message::System(_) => "system",
+            Message::User(_) => "user",
+            Message::Assistant(_) => "assistant",
+            Message::Tool(_) => "tool",
+            Message::Custom(_) => "custom",
+        })
+        .map(str::to_string)
+        .collect();
+    for event in events {
+        match event {
+            AgentEvent::MessageAppended { role, index, .. } => {
+                assert_eq!(*index, roles.len(), "append index follows the mirror");
+                roles.push(role.clone());
+            }
+            AgentEvent::MessageRetracted { index } => {
+                assert_eq!(*index + 1, roles.len(), "retraction pops the tail");
+                roles.pop();
+            }
+            AgentEvent::TranscriptRewritten { len, .. } => roles = vec!["?".to_string(); *len],
+            _ => {}
+        }
+    }
+    roles
+}
+
+pub(super) fn assert_mirrors(events: &[AgentEvent], seed: &[Message], transcript: &[Message]) {
+    let mirror = mirror_roles(events, seed);
+    let actual: Vec<String> = transcript
+        .iter()
+        .map(|m| m.role_name().to_string())
+        .collect();
+    assert_eq!(mirror.len(), actual.len(), "{mirror:?} vs {actual:?}");
+    for (m, a) in mirror.iter().zip(&actual) {
+        assert!(m == "?" || m == a, "{mirror:?} vs {actual:?}");
+    }
+}
+
+fn truncated_empty(cap: u32) -> ModelResponse {
+    let mut r = response(vec![], "");
+    r.finish_reason = Some("length".to_string());
+    let _ = cap;
+    r
+}
+
+#[tokio::test]
+async fn a_recovery_pop_is_retracted_and_the_mirror_stays_exact() {
+    let model_script = vec![
+        truncated_empty(2048),
+        truncated_empty(4096),
+        tool_turn(&["c1"]),
+        response(vec![], "done"),
+    ];
+    let harness = harness(model_script, PayloadCapture::default());
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(
+        RunConfig::new("recover").with_max_turn_output_tokens(2048),
+        (),
+    )
+    .with_events(recorder.sink());
+    let seed = vec![Message::user("go")];
+    let run = harness
+        .invoke_in_context(&(), ctx, seed.clone())
+        .await
+        .unwrap();
+
+    let events = recorder.events();
+    let retractions = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::MessageRetracted { index: 1 }))
+        .count();
+    assert_eq!(retractions, 2, "both blank replies were dropped");
+    // The recovery nudge is announced as an ordinary append.
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::MessageAppended { role, .. } if role == "user"
+        )),
+        "the nudge is announced"
+    );
+    assert_mirrors(&events, &seed, &run.messages);
+}
+
+#[tokio::test]
+async fn steer_between_turns_reports_the_right_first_index() {
+    let harness = harness(
+        vec![tool_turn(&["a"]), tool_turn(&["b"]), response(vec![], "done")],
+        PayloadCapture::default(),
+    );
+    let queue = Arc::new(RunQueue::new());
+    queue.push(QueueLane::Steer, Message::user("s1")).await;
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("steer"), ())
+        .with_events(recorder.sink())
+        .with_run_queue(Arc::clone(&queue));
+    let seed = vec![Message::user("go")];
+    let run = harness
+        .invoke_in_context(&(), ctx, seed.clone())
+        .await
+        .unwrap();
+    let events = recorder.events();
+    let first = events.iter().find_map(|e| match e {
+        AgentEvent::QueuedMessageApplied { first_index, .. } => Some(*first_index),
+        _ => None,
+    });
+    assert_eq!(first, Some(3));
+    assert_eq!(run.messages[3].text(), "s1");
+    assert_mirrors(&events, &seed, &run.messages);
+}
+
+#[test]
+fn tracker_retract_and_rebase_are_explicit() {
+    use super::lifecycle::TurnTracker;
+    let sink = crate::events::EventSink::new();
+    let recorder = EventRecorder::with_sink(sink.clone());
+    let capture = PayloadCapture::default();
+    let mut tracker = TurnTracker::new(0);
+    let mut messages = vec![Message::user("a"), Message::user("b"), Message::user("c")];
+    tracker.flush(&sink, capture, &messages);
+    messages.pop();
+    tracker.retract_to(&sink, messages.len());
+    // An unannounced message that is popped again emits nothing.
+    messages.push(Message::user("tmp"));
+    messages.pop();
+    tracker.retract_to(&sink, messages.len());
+    messages.insert(0, Message::system("sys"));
+    tracker.rebase(&sink, messages.len(), "tool_change");
+    messages.push(Message::user("d"));
+    tracker.flush(&sink, capture, &messages);
+    let kinds: Vec<String> = recorder
+        .events()
+        .iter()
+        .map(|e| match e {
+            AgentEvent::MessageAppended { index, .. } => format!("append:{index}"),
+            AgentEvent::MessageRetracted { index } => format!("retract:{index}"),
+            AgentEvent::TranscriptRewritten { len, reason } => format!("rewrite:{len}:{reason}"),
+            other => other.kind().to_string(),
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "append:0",
+            "append:1",
+            "append:2",
+            "retract:2",
+            "rewrite:3:tool_change",
+            "append:3"
+        ]
+    );
+}

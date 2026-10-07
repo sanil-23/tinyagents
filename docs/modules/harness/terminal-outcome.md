@@ -40,8 +40,8 @@ outcomes (earlier wins ties; `provider_started` is OR-ed):
 
 ## Turn and message lifecycle
 
-- `TurnStarted { turn }` fires before each model call (1-based, matches the
-  `-model-N` call id). `TurnCompleted { turn, tool_result_count, tool_call_ids }`
+- `TurnStarted { turn }` fires before each model call (1-based, counting model-call
+  attempts, so a recovery retry opens a new turn). `TurnCompleted { turn, tool_result_count, tool_call_ids }`
   fires when its tool batch has been folded into the transcript, when the turn
   produced the final answer, or when the run ended mid-turn (every started turn
   is closed, including on failure).
