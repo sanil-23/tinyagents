@@ -1,6 +1,7 @@
 use std::{future::Future, sync::Arc};
 
 use tinyagents_harness::CancellationToken;
+use tinyagents_harness::terminal::{TerminalOutcome, TerminalReason};
 use tinyagents_session::transcript::{
     SessionRef, SessionTurnGuard, TranscriptHistory, TranscriptMessage, TranscriptPartial,
     TranscriptTurn, TurnUsage, lock_session_turn, session_stem,
