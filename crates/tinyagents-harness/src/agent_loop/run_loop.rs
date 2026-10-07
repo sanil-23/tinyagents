@@ -71,7 +71,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         if matches!(exit, LoopExit::Paused(_))
             && let Some(summary) = ctx.halted_by_guard.take()
         {
-            terminal = TerminalOutcome::halted(summary).with_provider_started(ctx.provider_started());
+            terminal =
+                TerminalOutcome::halted(summary).with_provider_started(ctx.provider_started());
         }
         run.terminal = Some(terminal.clone());
 
