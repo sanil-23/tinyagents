@@ -697,7 +697,7 @@ impl tinyagents_harness::middleware::Middleware<(), ()> for FailingAfterAgent {
         &self,
         _ctx: &mut RunContext<()>,
         _state: &(),
-        _run: &mut tinyagents_harness::agent_loop::AgentRun,
+        _run: &mut tinyagents_harness::middleware::AgentRun,
     ) -> tinyagents_harness::Result<()> {
         Err(TinyAgentsError::Middleware("cleanup boom".into()))
     }
