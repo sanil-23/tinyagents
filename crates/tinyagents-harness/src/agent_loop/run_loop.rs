@@ -35,7 +35,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // A mid-turn tool failure used to drop everything accumulated so far,
         // leaving the caller unable to inspect, repair, or resume from the
         // partial conversation.
-        ctx.turns = super::lifecycle::TurnTracker::new(messages.len());
+        ctx.reset_turn_tracker(messages.len());
         let outcome = self
             .run_loop_body(state, ctx, run, status, &mut messages, streaming)
             .await;

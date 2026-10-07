@@ -4352,3 +4352,20 @@ async fn a_drivers_typed_success_outcome_is_not_flattened_to_completed() {
     assert_eq!(outcomes.as_slice(), [capped]);
     assert_ne!(outcomes[0].reason, TerminalReason::Completed);
 }
+
+#[test]
+fn tool_snapshot_retaining_keeps_matching_declarations_and_exactness() {
+    let spec = |name: &str| ToolSpec {
+        name: name.into(),
+        description: "d".into(),
+        parameters: serde_json::json!({}),
+    };
+    let snapshot = ToolSnapshot::new(vec![spec("keep"), spec("drop")])
+        .unwrap()
+        .exact();
+    let narrowed = snapshot.retaining(|spec| spec.name == "keep");
+    let names: Vec<&str> = narrowed.specs().iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["keep"]);
+    assert!(narrowed.is_exact(), "a one-off snapshot stays one-off");
+    assert_eq!(snapshot.specs().len(), 2, "the source is untouched");
+}

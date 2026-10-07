@@ -82,6 +82,7 @@ where
             messages: input,
             ..LoopState::default()
         };
+        ctx.reset_turn_tracker(loop_state.messages.len());
         let mut current: &str = node::PLAN;
         let mut limit_stop = false;
 
@@ -200,6 +201,40 @@ where
             }
         };
 
+        let terminal = match &outcome {
+            Ok(None) => {
+                let reason = if limit_stop {
+                    TerminalOutcome::limit_reached(
+                        Some(LimitKind::ModelCalls),
+                        "stopped with the partial run: model_calls limit reached",
+                    )
+                } else {
+                    TerminalOutcome::completed()
+                };
+                Some(reason.with_provider_started(run.model_calls > 0))
+            }
+            Ok(Some(interrupt)) => {
+                let reason = interrupt
+                    .payload
+                    .get("reason")
+                    .or_else(|| interrupt.payload.get("message"))
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string);
+                let outcome = if let Some(summary) = ctx.take_halted_by_guard() {
+                    TerminalOutcome::halted(summary)
+                } else {
+                    TerminalOutcome::new(
+                        TerminalReason::Paused,
+                        reason
+                            .clone()
+                            .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
+                    )
+                };
+                Some(outcome.with_provider_started(run.model_calls > 0))
+            }
+            Err(_) => None,
+        };
+        run.terminal = terminal.clone();
         status.mark_running(HarnessPhase::Middleware);
         harness
             .middleware()
@@ -217,16 +252,7 @@ where
         // interrupt.
         match outcome {
             Ok(None) => {
-                let outcome = if limit_stop {
-                    TerminalOutcome::limit_reached(
-                        Some(LimitKind::ModelCalls),
-                        "stopped with the partial run: model_calls limit reached",
-                    )
-                } else {
-                    TerminalOutcome::completed()
-                }
-                .with_provider_started(run.model_calls > 0);
-                run.terminal = Some(outcome.clone());
+                let outcome = terminal.expect("terminal set before after_agent");
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),
                     outcome: Some(outcome),
@@ -248,15 +274,6 @@ where
                         .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
                 });
                 status.set_last_event(record.id);
-                run.terminal = Some(
-                    TerminalOutcome::new(
-                        TerminalReason::Paused,
-                        reason
-                            .clone()
-                            .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
-                    )
-                    .with_provider_started(run.model_calls > 0),
-                );
                 run.paused = Some(PauseState {
                     reason,
                     paused_at_checkpoint: 0,

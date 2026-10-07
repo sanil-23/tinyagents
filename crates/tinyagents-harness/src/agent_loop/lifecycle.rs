@@ -21,6 +21,8 @@ use tinyinference_llm::message::Message;
 /// mutates the transcript can reach it.
 #[derive(Debug, Default)]
 pub(crate) struct TurnTracker {
+    /// Number of initial input messages that were never announced.
+    seed_len: usize,
     /// Messages `[0, announced)` have been announced (or are the seed input).
     announced: usize,
     /// Number of the most recently opened turn.
@@ -45,6 +47,7 @@ impl TurnTracker {
     pub(crate) fn new(seed_len: usize) -> Self {
         Self {
             announced: seed_len,
+            seed_len,
             turn: 0,
             open: None,
         }
@@ -91,10 +94,10 @@ impl TurnTracker {
     /// removed, highest index first; removing a message that was never
     /// announced is silent.
     pub(crate) fn retract_to(&mut self, events: &EventSink, new_len: usize) {
-        for index in (new_len..self.announced).rev() {
+        for index in (new_len.max(self.seed_len)..self.announced).rev() {
             events.emit(AgentEvent::MessageRetracted { index });
         }
-        self.announced = self.announced.min(new_len);
+        self.announced = self.announced.min(new_len.max(self.seed_len));
         if let Some((_, start)) = self.open.as_mut() {
             *start = (*start).min(new_len);
         }

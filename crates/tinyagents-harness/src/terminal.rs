@@ -211,7 +211,11 @@ impl TerminalOutcome {
     /// text). Other outcomes are returned unchanged.
     pub fn with_limit_kind(mut self, kind: Option<LimitKind>) -> Self {
         if self.reason == TerminalReason::LimitReached(None) {
-            self.reason = TerminalReason::LimitReached(kind);
+            self.reason = match kind {
+                Some(LimitKind::WallClock) => TerminalReason::Timeout,
+                kind => TerminalReason::LimitReached(kind),
+            };
+            self.class = self.reason.class();
         }
         self
     }
@@ -248,10 +252,15 @@ impl TerminalOutcome {
             | E::ModelNotFound(_)
             | E::EmptyResponse
             | E::GenerationStalled
-            | E::SummarizationUsage { .. } => Self::new(
-                TerminalReason::ProviderFailed(Some(FailoverReason::classify(error))),
-                message,
-            ),
+            | E::SummarizationUsage { .. } => {
+                let reason = FailoverReason::classify(error);
+                let outcome = Self::new(TerminalReason::ProviderFailed(Some(reason)), message);
+                if reason == FailoverReason::Timeout {
+                    outcome.with_timeout_phase(site)
+                } else {
+                    outcome
+                }
+            }
             E::Tool(_) | E::ToolFailed(_) | E::ToolNotFound(_) | E::ModelRetry(_) => {
                 Self::new(TerminalReason::ToolFailed, message)
             }

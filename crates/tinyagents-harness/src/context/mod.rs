@@ -786,6 +786,23 @@ impl<Ctx> RunContext<Ctx> {
         self.events.emit(event)
     }
 
+    pub(crate) fn take_last_limit(&self) -> Option<crate::events::LimitKind> {
+        self.last_limit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    /// Takes the repeat-progress guard's halt summary, if one was latched.
+    pub fn take_halted_by_guard(&mut self) -> Option<String> {
+        self.halted_by_guard.take()
+    }
+
+    /// Resets lifecycle tracking for a run whose input already contains seed messages.
+    pub fn reset_turn_tracker(&mut self, seed_len: usize) {
+        self.turns = crate::agent_loop::TurnTracker::new(seed_len);
+    }
+
     /// Returns this run's identifier.
     pub fn run_id(&self) -> &RunId {
         &self.config.run_id

@@ -426,6 +426,8 @@ where
         model: model_name.clone(),
     });
     status.set_last_event(started_record.id);
+    status.active_model_call = Some(call_id.clone());
+    ctx.active_model_call = Some(call_id.clone());
 
     let base = DirectModelBase {
         model: binding.model.as_ref(),
@@ -442,6 +444,8 @@ where
     run.model_calls += 1;
     run.steps += 1;
     status.model_calls = run.model_calls;
+    status.active_model_call = None;
+    ctx.active_model_call = None;
     if let Some(usage) = response.usage {
         run.usage.record(usage);
         loop_state.usage = run.usage;
@@ -531,7 +535,24 @@ where
         &mut loop_state.messages,
         calls,
     )
-    .await?;
+    .await;
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error)
+            if matches!(
+                harness.policy().limits.behavior,
+                tinyagents_harness::limits::LimitBehavior::StopWithPartial
+            ) && matches!(error, TinyAgentsError::LimitExceeded(_)) =>
+        {
+            loop_state.limit_stop = true;
+            loop_state.finished = true;
+            if loop_state.final_text.is_none() {
+                loop_state.final_text = Some(last_assistant_text(&loop_state.messages));
+            }
+            return Ok(goto(loop_state, node::SETTLE));
+        }
+        Err(error) => return Err(error),
+    };
     loop_state.tool_calls = run.tool_calls;
     loop_state.executed_tools = run.executed_tools.clone();
     let _ = outcome;
