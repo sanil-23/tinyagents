@@ -235,7 +235,7 @@ where
                 Some(outcome.with_provider_started(run.model_calls > 0))
             }
             Err(error) => Some(TerminalOutcome::from_error(
-                &error,
+                error,
                 if ctx.model_call_failed() {
                     tinyagents_harness::terminal::TimeoutPhase::Provider
                 } else if ctx.provider_started() {
@@ -247,10 +247,23 @@ where
         };
         run.terminal = terminal.clone();
         status.mark_running(HarnessPhase::Middleware);
-        harness
+        let after_agent = harness
             .middleware()
             .run_after_agent(ctx, state, run)
-            .await?;
+            .await;
+        if let Err(hook_error) = after_agent {
+            if outcome.is_err() {
+                // The originating node failure stays authoritative, as in the
+                // direct loop; the hook still ran for its cleanup.
+                tracing::warn!(
+                    target: "tinyagents::agent_loop",
+                    error = %hook_error,
+                    "[agent_loop] after_agent failed after a node error; keeping the node error"
+                );
+            } else {
+                return Err(hook_error);
+            }
+        }
 
         // `status.mark_completed`/`mark_interrupted`/`mark_failed` and (on
         // error) `AgentEvent::RunFailed` are applied centrally by
