@@ -125,6 +125,7 @@ pub use capability::{
 pub use cost::CostTotals;
 pub use error::{Result, TinyAgentsError};
 pub use ids::*;
+pub use terminal::{TerminalClass, TerminalOutcome, TerminalReason, TimeoutPhase};
 pub use model_registry::{ModelRegistry, ModelSelection, ResolvedModelBinding};
 pub use no_progress::{
     ArgumentChurnDetector, CallGate, ClassifiedFailure, ClassifiedFailureTracker,

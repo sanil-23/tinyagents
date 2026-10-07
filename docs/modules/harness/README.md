@@ -244,6 +244,7 @@ Feature details:
 - [Tool dialects](tool-dialect.md)
 - [Middleware feature](middleware.md)
 - [Repeat-progress guard](repeat-progress.md)
+- [Terminal outcome and turn/message lifecycle events](terminal-outcome.md)
 - [Sub-agent and orchestrator steering](subagent-steering.md)
 - [Structured output feature](structured-output.md)
 - [Limits, retry, fallback, and rate limiting](limits-retry.md)

@@ -49,8 +49,11 @@ pub enum AgentEvent {
     MiddlewareCompleted { name: String },
     RetryScheduled { call_id: CallId, attempt: usize },
     Custom { name: String, payload: serde_json::Value },
-    RunCompleted { run_id: RunId },
-    RunFailed { run_id: RunId, error: String },
+    TurnStarted { turn: u32 },
+    TurnCompleted { turn: u32, tool_result_count: usize, tool_call_ids: Vec<CallId> },
+    MessageAppended { role: String, index: usize, call_id: Option<CallId>, message: Option<Value> },
+    RunCompleted { run_id: RunId, outcome: Option<TerminalOutcome> },
+    RunFailed { run_id: RunId, error: String, outcome: Option<TerminalOutcome> },
 }
 ```
 

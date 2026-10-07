@@ -25,6 +25,10 @@ snapshot rather than a stream.
   sub-agent recursion. Most `*Started`/`*Completed` pairs also have a
   `*Failed` terminal partner so an exporter pairing calls by id never sees an
   open span for a call that actually errored.
+  Run boundaries carry a typed [`TerminalOutcome`](crate::terminal::TerminalOutcome) on
+  `RunCompleted`/`RunFailed`, and `TurnStarted`/`TurnCompleted`/
+  `MessageAppended` let a consumer mirror the transcript turn by turn; see
+  `docs/modules/harness/terminal-outcome.md`.
 - [`EventRecord`] — an [`AgentEvent`] paired with a stable [`EventId`] and a
   monotonic stream `offset`.
 - [`EventListener`] — the `Send + Sync` trait a pluggable observer
