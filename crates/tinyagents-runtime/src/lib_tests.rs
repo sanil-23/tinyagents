@@ -4194,3 +4194,124 @@ async fn refreshing_initial_prefix_accepts_an_identical_frozen_preparation_after
 
 #[path = "lib_prefix_refresh_tests.rs"]
 mod prefix_refresh_tests;
+
+struct OutcomeHook {
+    outcomes: Mutex<Vec<tinyagents_harness::terminal::TerminalOutcome>>,
+    order: Mutex<Vec<&'static str>>,
+}
+
+#[async_trait]
+impl SessionHooks for OutcomeHook {
+    async fn before_turn(
+        &self,
+        _: &mut SessionTurnRequest,
+        _: &mut TurnOptions,
+        _: SessionStateView<'_>,
+    ) -> Result<TurnPreparation, RuntimeError> {
+        Ok(TurnPreparation::default())
+    }
+    async fn before_commit(
+        &self,
+        _: &SessionTurnOutcome,
+        _: &crate::TranscriptTurnOptions,
+    ) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+    async fn on_terminal_outcome(
+        &self,
+        outcome: tinyagents_harness::terminal::TerminalOutcome,
+    ) -> Result<(), RuntimeError> {
+        self.order.lock().unwrap().push("outcome");
+        self.outcomes.lock().unwrap().push(outcome);
+        Ok(())
+    }
+    async fn on_terminal(&self, _: SessionTerminal) -> Result<(), RuntimeError> {
+        self.order.lock().unwrap().push("terminal");
+        Ok(())
+    }
+}
+
+fn outcome_hook() -> Arc<OutcomeHook> {
+    Arc::new(OutcomeHook {
+        outcomes: Mutex::default(),
+        order: Mutex::default(),
+    })
+}
+
+#[tokio::test]
+async fn driver_failures_deliver_their_typed_outcome_before_the_terminal() {
+    use tinyagents_harness::terminal::{TerminalClass, TerminalOutcome, TerminalReason};
+    let hook = outcome_hook();
+    let typed = TerminalOutcome::new(TerminalReason::Timeout, "deadline");
+    let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
+        outcome: Some(typed.clone()),
+        error: RuntimeError::Driver("deadline".into()),
+        partial: None,
+    })])))
+    .hooks(hook.clone())
+    .build()
+    .unwrap();
+    let _ = session
+        .turn(
+            SessionTurnRequest::new(Message::user("x")),
+            TurnOptions::default(),
+        )
+        .await;
+    assert_eq!(hook.outcomes.lock().unwrap().as_slice(), [typed]);
+    assert_eq!(hook.order.lock().unwrap().as_slice(), ["outcome", "terminal"]);
+
+    // An untyped failure falls back to a derived Failure-class outcome.
+    let hook = outcome_hook();
+    let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Err(DriverFailure {
+        outcome: None,
+        error: RuntimeError::Driver("plain".into()),
+        partial: None,
+    })])))
+    .hooks(hook.clone())
+    .build()
+    .unwrap();
+    let _ = session
+        .turn(
+            SessionTurnRequest::new(Message::user("x")),
+            TurnOptions::default(),
+        )
+        .await;
+    let outcomes = hook.outcomes.lock().unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].class, TerminalClass::Failure);
+}
+
+#[tokio::test]
+async fn completed_turns_report_a_completed_outcome() {
+    use tinyagents_harness::terminal::TerminalReason;
+    let hook = outcome_hook();
+    let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Ok(outcome(vec![
+        Message::assistant("hi"),
+    ]))])))
+    .hooks(hook.clone())
+    .build()
+    .unwrap();
+    session
+        .turn(
+            SessionTurnRequest::new(Message::user("x")),
+            TurnOptions::default(),
+        )
+        .await
+        .unwrap();
+    tokio::task::yield_now().await;
+    let outcomes = hook.outcomes.lock().unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].reason, TerminalReason::Completed);
+}
+
+#[test]
+fn session_terminal_derives_an_outcome() {
+    use tinyagents_harness::terminal::TerminalClass;
+    assert_eq!(
+        SessionTerminal::Cancelled.outcome().class,
+        TerminalClass::Cancellation
+    );
+    let failed = SessionTerminal::Failed("x".into()).outcome();
+    assert_eq!(failed.class, TerminalClass::Failure);
+    assert_eq!(failed.message, "x");
+}
