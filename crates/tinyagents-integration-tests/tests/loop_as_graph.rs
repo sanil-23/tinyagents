@@ -635,3 +635,39 @@ async fn graph_reresolves_when_before_model_adds_a_model_hint() {
 
     assert_eq!(run.text(), Some("hinted".to_string()));
 }
+
+// ── Terminal outcome parity ─────────────────────────────────────────────────
+
+/// A `StopWithPartial` cap must be reported identically by both engines: a
+/// limit outcome, not a plain completion.
+#[tokio::test]
+async fn model_cap_stop_reports_the_same_terminal_outcome_in_both_engines() {
+    use tinyagents_harness::events::LimitKind;
+    use tinyagents_harness::limits::{LimitBehavior, RunLimits};
+    use tinyagents_harness::terminal::TerminalReason;
+
+    for execution in [LoopExecution::Direct, LoopExecution::Graph] {
+        let model = Arc::new(MockModel::with_tool_call("spin", serde_json::json!({})));
+        let mut harness = harness_for(execution, model);
+        harness.register_tool(Arc::new(tinyagents_harness::testkit::FakeTool::returning(
+            "spin", "again",
+        )));
+        harness.with_policy(RunPolicy {
+            execution,
+            limits: RunLimits::default()
+                .with_max_model_calls(2)
+                .with_behavior(LimitBehavior::StopWithPartial),
+            ..RunPolicy::default()
+        });
+        let run = harness
+            .invoke_default(&(), vec![Message::user("go")])
+            .await
+            .expect("StopWithPartial completes the run");
+        let outcome = run.terminal.expect("terminal outcome");
+        assert_eq!(
+            outcome.reason,
+            TerminalReason::LimitReached(Some(LimitKind::ModelCalls)),
+            "{execution:?}"
+        );
+    }
+}
