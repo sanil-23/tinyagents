@@ -799,7 +799,8 @@ impl<Ctx> RunContext<Ctx> {
         self.provider_started = true;
     }
 
-    pub(crate) fn mark_model_call_failed(&mut self) {
+    #[doc(hidden)]
+    pub fn mark_model_call_failed(&mut self) {
         self.model_call_failed = true;
     }
 
