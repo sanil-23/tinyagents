@@ -170,12 +170,15 @@ async fn message_payloads_follow_the_capture_policy() {
             .invoke_in_context(&(), ctx, vec![Message::user("go")])
             .await
             .unwrap();
+        let mut seen = 0;
         for event in recorder.events() {
             if let AgentEvent::MessageAppended { role, message, .. } = event {
+                seen += 1;
                 let expected = if role == "tool" { expect_tool } else { expect_message };
                 assert_eq!(message.is_some(), expected, "role {role}");
             }
         }
+        assert_eq!(seen, 3, "assistant, tool, assistant");
     }
 }
 
