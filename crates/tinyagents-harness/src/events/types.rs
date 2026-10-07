@@ -680,8 +680,9 @@ pub enum AgentEvent {
 
     /// A model turn began: the loop is about to dispatch the model call
     /// numbered `turn`. A turn is one model call plus the tool batch it
-    /// requested; `turn` is 1-based and matches the `-model-N` suffix of the
-    /// call id. Paired with [`AgentEvent::TurnCompleted`].
+    /// requested; `turn` is 1-based and counts model-call attempts, so a
+    /// recovery retry of an unusable reply opens a new turn. Paired with
+    /// [`AgentEvent::TurnCompleted`].
     TurnStarted {
         /// 1-based turn number within the run.
         turn: u32,
@@ -719,6 +720,28 @@ pub enum AgentEvent {
         /// the default payload-free mode.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<serde_json::Value>,
+    },
+
+    /// The message at `index` (and any announced after it) was removed from the
+    /// working transcript — for example an unusable assistant reply dropped
+    /// before a retry or a recovery nudge. Emitted highest index first, so
+    /// applying them in order to a mirror is a sequence of pops. Always
+    /// precedes the [`AgentEvent::MessageAppended`] of whatever replaces it.
+    MessageRetracted {
+        /// Position the removed message held in the working transcript.
+        index: usize,
+    },
+
+    /// The working transcript was rewritten in place (not by appending or
+    /// popping): a tool-set change folded into, or inserted before, the
+    /// leading system message. The transcript now holds `len` messages; a
+    /// mirror should treat its copy as stale and resynchronise. Later
+    /// [`AgentEvent::MessageAppended`] indices count from this new length.
+    TranscriptRewritten {
+        /// Message count after the rewrite.
+        len: usize,
+        /// Why it was rewritten (a stable snake_case label).
+        reason: String,
     },
 
     /// A graph routing decision produced a named route.
@@ -985,6 +1008,8 @@ impl AgentEvent {
             AgentEvent::TurnStarted { .. } => "turn.started",
             AgentEvent::TurnCompleted { .. } => "turn.completed",
             AgentEvent::MessageAppended { .. } => "message.appended",
+            AgentEvent::MessageRetracted { .. } => "message.retracted",
+            AgentEvent::TranscriptRewritten { .. } => "transcript.rewritten",
             AgentEvent::RouteSelected { .. } => "route.selected",
             AgentEvent::UsageRecorded { .. } => "usage.recorded",
             AgentEvent::CostRecorded { .. } => "cost.recorded",
