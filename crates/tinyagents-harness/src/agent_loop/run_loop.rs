@@ -150,6 +150,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
 
     /// The loop body proper. Returns how the loop left off so the caller can
     /// finalize (and, on any error, still keep the working transcript).
+    #[allow(clippy::too_many_arguments)]
     async fn run_loop_body(
         &self,
         state: &State,

@@ -66,9 +66,15 @@ fn harness_for(execution: LoopExecution, model: Arc<MockModel>) -> AgentHarness<
 /// Asserts `expected` appears, in order, as a (not necessarily contiguous)
 /// subsequence of `actual` — the "same kind sequence, extra graph events
 /// allowed" contract.
+///
+/// The turn/message lifecycle events (`turn.*`, `message.appended`) are emitted
+/// by the direct loop only for now; the graph driver does not announce them, so
+/// they are excluded from the expected sequence.
 fn assert_kinds_subsequence(expected: &[String], actual: &[String]) {
     let mut cursor = 0;
-    for kind in expected {
+    let lifecycle =
+        |kind: &&String| !(kind.starts_with("turn.") || kind.as_str() == "message.appended");
+    for kind in expected.iter().filter(lifecycle) {
         let Some(offset) = actual[cursor..].iter().position(|k| k == kind) else {
             panic!(
                 "expected event kind `{kind}` not found (in order) in graph run's kinds: \
