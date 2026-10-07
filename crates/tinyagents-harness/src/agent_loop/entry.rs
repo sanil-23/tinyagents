@@ -457,9 +457,23 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 }
             }
             Err(error) => {
+                // Where the run stood when it failed decides the timeout phase
+                // and `provider_started`: an unfinished model call leaves
+                // `active_model_call` set, a completed one has bumped the
+                // run's call counter.
+                let site = if ctx.active_model_call.is_some() {
+                    TimeoutPhase::Provider
+                } else if terminal.run.model_calls > 0 {
+                    TimeoutPhase::AfterTurn
+                } else {
+                    TimeoutPhase::BeforeProvider
+                };
+                let outcome = TerminalOutcome::from_error(&error, site);
+                terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,
-                    error: error.to_string(), outcome: None
+                    error: error.to_string(),
+                    outcome: Some(outcome),
                 });
                 status.set_last_event(record.id);
                 status.mark_failed(error.to_string());

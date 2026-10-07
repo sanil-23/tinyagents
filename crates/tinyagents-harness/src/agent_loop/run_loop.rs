@@ -63,6 +63,11 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         status.mark_running(HarnessPhase::Middleware);
         self.middleware.run_after_agent(ctx, state, run).await?;
 
+        // One typed answer to "how did the loop end", derived once here so the
+        // event, `run.terminal` and the legacy fields cannot disagree.
+        let terminal = TerminalOutcome::from_loop_exit(&exit, run.model_calls > 0);
+        run.terminal = Some(terminal.clone());
+
         match exit {
             LoopExit::Finished | LoopExit::LimitStop(_) => {
                 if let LoopExit::LimitStop(kind) = &exit {
@@ -75,7 +80,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     );
                 }
                 let record = ctx.emit(AgentEvent::RunCompleted {
-                    run_id: ctx.run_id().clone(), outcome: None
+                    run_id: ctx.run_id().clone(),
+                    outcome: Some(terminal),
                 });
                 status.set_last_event(record.id);
             }
