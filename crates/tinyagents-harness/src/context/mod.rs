@@ -798,7 +798,7 @@ impl<Ctx> RunContext<Ctx> {
         self.provider_started = true;
     }
 
-    pub(crate) fn provider_started(&self) -> bool {
+    pub fn provider_started(&self) -> bool {
         self.provider_started
     }
 

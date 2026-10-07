@@ -565,13 +565,7 @@ where
     };
     loop_state.tool_calls = run.tool_calls;
     loop_state.executed_tools = run.executed_tools.clone();
-    if let Err(error) = &outcome
-        && matches!(error, TinyAgentsError::LimitExceeded(_))
-    {
-        loop_state.limit_stop = true;
-        loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ToolCalls);
-    }
-    let _ = outcome?;
+    let _ = outcome;
 
     if harness.middleware().any_should_stop_after_turn(ctx, run) {
         ctx.request_control(MiddlewareControl::JumpTo(LoopTarget::End));

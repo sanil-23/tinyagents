@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use tinyagents_harness::agent_loop::phases::LoopDriver;
 use tinyagents_harness::context::RunContext;
 use tinyagents_harness::error::{Result, TinyAgentsError};
-use tinyagents_harness::events::{AgentEvent, HarnessRunStatus, LimitKind};
+use tinyagents_harness::events::{AgentEvent, HarnessRunStatus};
 use tinyagents_harness::ids::HarnessPhase;
 use tinyagents_harness::middleware::AgentRun;
 use tinyagents_harness::runtime::AgentHarness;
