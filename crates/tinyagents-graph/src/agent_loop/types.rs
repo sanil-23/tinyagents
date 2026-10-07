@@ -69,6 +69,11 @@ pub struct LoopState {
     /// How many output-validation retries have been spent so far (bounds
     /// [`tinyagents_harness::runtime::RunPolicy::output_retry`]).
     pub(crate) output_retry_attempts: u8,
+    /// Set when the run finished because a call cap tripped under
+    /// `LimitBehavior::StopWithPartial`, so the driver can report
+    /// `TerminalReason::LimitReached` instead of a plain completion.
+    #[serde(default)]
+    pub(crate) limit_stop: bool,
 }
 
 impl LoopState {

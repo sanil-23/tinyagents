@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use tinyagents_harness::agent_loop::phases::LoopDriver;
 use tinyagents_harness::context::RunContext;
 use tinyagents_harness::error::{Result, TinyAgentsError};
-use tinyagents_harness::events::{AgentEvent, HarnessRunStatus};
+use tinyagents_harness::events::{AgentEvent, HarnessRunStatus, LimitKind};
 use tinyagents_harness::ids::HarnessPhase;
 use tinyagents_harness::middleware::AgentRun;
 use tinyagents_harness::runtime::AgentHarness;
@@ -83,6 +83,7 @@ where
             ..LoopState::default()
         };
         let mut current: &str = node::PLAN;
+        let mut limit_stop = false;
 
         let outcome = loop {
             // Keeps `run.messages` a running snapshot of the transcript as
@@ -166,6 +167,7 @@ where
                             ));
                         }
                     };
+                    limit_stop |= loop_state.limit_stop;
                     let Some(target) = command.goto.first() else {
                         break Err(TinyAgentsError::Validation(
                             "GraphLoopDriver: loop node's command carried no route".to_string(),

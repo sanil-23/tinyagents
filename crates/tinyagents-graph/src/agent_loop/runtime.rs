@@ -304,6 +304,7 @@ where
             tinyagents_harness::limits::LimitBehavior::StopWithPartial
         ) {
             loop_state.finished = true;
+            loop_state.limit_stop = true;
             if loop_state.final_text.is_none() {
                 loop_state.final_text = Some(last_assistant_text(&loop_state.messages));
             }
