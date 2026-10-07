@@ -443,6 +443,7 @@ where
         Err(error) => {
             status.active_model_call = None;
             ctx.active_model_call = None;
+            ctx.mark_model_call_failed();
             return Err(error);
         }
     };

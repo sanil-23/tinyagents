@@ -468,7 +468,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // and `provider_started`: an unfinished model call leaves
                 // `active_model_call` set, a completed one has bumped the
                 // run's call counter.
-                let site = if ctx.active_model_call.is_some() {
+                let site = if ctx.active_model_call.is_some() || ctx.model_call_failed() {
                     TimeoutPhase::Provider
                 } else if terminal.run.model_calls > 0 {
                     TimeoutPhase::AfterTurn

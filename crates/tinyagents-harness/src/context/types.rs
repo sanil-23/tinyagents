@@ -510,6 +510,10 @@ pub struct RunContext<Ctx = ()> {
     /// goes through the agent loop.
     pub active_model_call: Option<CallId>,
     pub(crate) provider_started: bool,
+    /// Set when a model call returned an error, so the terminal classifier
+    /// still knows the failure surfaced inside the provider call after
+    /// `active_model_call` was cleared.
+    pub(crate) model_call_failed: bool,
     /// Resolutions for the deferred tool calls left pending on the transcript
     /// this run is resuming (A2). Taken by the agent loop before its first
     /// model call and applied to the unanswered tool calls on the last

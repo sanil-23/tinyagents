@@ -329,6 +329,7 @@ impl<Ctx> RunContext<Ctx> {
             last_limit: std::sync::Mutex::new(None),
             active_model_call: None,
             provider_started: false,
+            model_call_failed: false,
             deferred_results: None,
             approved_calls: std::collections::HashSet::new(),
             refusal_metadata: std::collections::HashMap::new(),
@@ -796,6 +797,15 @@ impl<Ctx> RunContext<Ctx> {
 
     pub(crate) fn mark_provider_started(&mut self) {
         self.provider_started = true;
+    }
+
+    pub(crate) fn mark_model_call_failed(&mut self) {
+        self.model_call_failed = true;
+    }
+
+    /// Whether a model call surfaced an error (see `model_call_failed`).
+    pub fn model_call_failed(&self) -> bool {
+        self.model_call_failed
     }
 
     pub fn provider_started(&self) -> bool {
