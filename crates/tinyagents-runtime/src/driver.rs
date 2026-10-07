@@ -38,6 +38,11 @@ pub struct DriverFailure {
     pub error: RuntimeError,
     /// Work produced before failure, safe for partial transcript persistence.
     pub partial: Option<DriverOutcome>,
+    /// Typed classification of the failure, when the driver has one
+    /// ([`HarnessDriver`] always does). Delivered to
+    /// [`crate::SessionHooks::on_terminal_outcome`]; `None` falls back to a
+    /// classification derived from the error.
+    pub outcome: Option<tinyagents_harness::terminal::TerminalOutcome>,
 }
 
 /// Object-safe model/tool-loop invocation boundary.
@@ -80,6 +85,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
             request.tools.specs(),
         ) {
             return Err(DriverFailure {
+ outcome: None,
                 error: RuntimeError::ToolSnapshotMismatch,
                 partial: None,
             });
@@ -125,6 +131,7 @@ impl<State: Send + Sync + 'static, C: Send + Sync + 'static> SessionDriver<C>
         };
         match partial.error {
             Some(error) => Err(DriverFailure {
+ outcome: None,
                 error: RuntimeError::Driver(error.to_string()),
                 partial: Some(outcome),
             }),
