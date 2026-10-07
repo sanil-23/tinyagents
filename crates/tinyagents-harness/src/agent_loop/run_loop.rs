@@ -397,10 +397,16 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // transcript patch, so it is part of *this* turn's request; then
             // promote tools a successful `tool_search` returned and assemble
             // the turn's wire list.
-            surface
+            // Announce pending appends first so a rewrite is reported against
+            // the transcript it actually rewrote.
+            ctx.flush_transcript(self.policy.capture, messages);
+            let rewrote = surface
                 .declare_toolset_changes(self, ctx, messages, &host_allows, patch_profile.as_ref())
                 .await?;
-            surface.promote_discovered(messages, patch_profile.as_ref());
+            let rewrote = surface.promote_discovered(messages, patch_profile.as_ref()) || rewrote;
+            if rewrote {
+                ctx.rebase_transcript(messages.len(), "tool_change");
+            }
             surface.assemble_turn_schemas();
 
             // Build the request from the working transcript, tool schemas, and
