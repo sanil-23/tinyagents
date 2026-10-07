@@ -660,13 +660,65 @@ pub enum AgentEvent {
     /// finish, `Followup` at a natural finish. Emitted once per boundary
     /// with the number of messages applied; `Collect` items never produce
     /// this event because they are not applied to the transcript. Payload
-    /// text is deliberately not carried (events are payload-free by default).
+    /// text is carried only under the capture policy (see `messages`).
     QueuedMessageApplied {
         /// Which lane the messages came from.
         lane: crate::run_queue::QueueLane,
         /// How many messages were appended at this boundary (`1` under
         /// [`QueueMode::OneAtATime`][crate::run_queue::QueueMode::OneAtATime]).
         count: usize,
+        /// Transcript index of the first applied message; the applied messages
+        /// occupy `first_index..first_index + count`.
+        #[serde(default)]
+        first_index: usize,
+        /// The applied messages, serialized, captured only when
+        /// [`PayloadCapture::model_io`][crate::runtime::PayloadCapture::model_io]
+        /// is enabled. Empty in the default payload-free mode.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        messages: Vec<serde_json::Value>,
+    },
+
+    /// A model turn began: the loop is about to dispatch the model call
+    /// numbered `turn`. A turn is one model call plus the tool batch it
+    /// requested; `turn` is 1-based and matches the `-model-N` suffix of the
+    /// call id. Paired with [`AgentEvent::TurnCompleted`].
+    TurnStarted {
+        /// 1-based turn number within the run.
+        turn: u32,
+    },
+
+    /// A model turn ended: its tool batch (if any) has been folded into the
+    /// transcript, or the turn produced the final answer, or the run ended
+    /// mid-turn. Always follows a [`AgentEvent::TurnStarted`] with the same
+    /// `turn`.
+    TurnCompleted {
+        /// 1-based turn number within the run.
+        turn: u32,
+        /// How many tool-result messages the turn added to the transcript.
+        tool_result_count: usize,
+        /// The call ids those tool results answer, in transcript order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tool_call_ids: Vec<CallId>,
+    },
+
+    /// A message was appended to the run's working transcript (assistant
+    /// reply, tool result, nudge, steering injection, queued message, ...).
+    /// Emitted in transcript order at turn boundaries and run exit, so a
+    /// consumer can mirror the transcript from events alone. The seed input
+    /// messages are not announced.
+    MessageAppended {
+        /// Message role: `system`, `user`, `assistant`, `tool` or `custom`.
+        role: String,
+        /// Position of the message in the working transcript.
+        index: usize,
+        /// For `tool` messages, the call id the result answers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_id: Option<CallId>,
+        /// The serialized message, captured only when the capture policy
+        /// allows it (`model_io`, or `tool_io` for `tool` messages). `None` in
+        /// the default payload-free mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<serde_json::Value>,
     },
 
     /// A graph routing decision produced a named route.
@@ -829,10 +881,16 @@ pub enum AgentEvent {
     /// without correlating against [`AgentEvent::ModelCompleted`].
     StreamClosed,
 
-    /// A harness run finished successfully.
+    /// A harness run finished: it returned a result to the caller. A run
+    /// that stopped on a `StopWithPartial` cap also completes; its `outcome`
+    /// says so (`LimitReached`).
     RunCompleted {
         /// Identifier for the run that completed.
         run_id: RunId,
+        /// How the run ended, structured. `None` for events produced before
+        /// this field existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<crate::terminal::TerminalOutcome>,
     },
 
     /// A harness run ended with an unrecoverable error.
@@ -841,6 +899,10 @@ pub enum AgentEvent {
         run_id: RunId,
         /// Human-readable error description.
         error: String,
+        /// Why the run failed, structured. `outcome.message` mirrors `error`.
+        /// `None` for events produced before this field existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<crate::terminal::TerminalOutcome>,
     },
 }
 
@@ -920,6 +982,9 @@ impl AgentEvent {
             AgentEvent::Compacted { .. } => "context.compacted",
             AgentEvent::OutputRetry { .. } => "output.retry",
             AgentEvent::QueuedMessageApplied { .. } => "queue.applied",
+            AgentEvent::TurnStarted { .. } => "turn.started",
+            AgentEvent::TurnCompleted { .. } => "turn.completed",
+            AgentEvent::MessageAppended { .. } => "message.appended",
             AgentEvent::RouteSelected { .. } => "route.selected",
             AgentEvent::UsageRecorded { .. } => "usage.recorded",
             AgentEvent::CostRecorded { .. } => "cost.recorded",
