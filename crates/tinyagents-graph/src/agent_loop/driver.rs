@@ -20,6 +20,7 @@ use tinyagents_harness::ids::HarnessPhase;
 use tinyagents_harness::middleware::AgentRun;
 use tinyagents_harness::runtime::AgentHarness;
 use tinyagents_harness::steering::PauseState;
+use tinyagents_harness::terminal::{TerminalOutcome, TerminalReason};
 use tinyinference_llm::message::Message;
 
 use crate::command::{NodeResult, RouteTarget};
