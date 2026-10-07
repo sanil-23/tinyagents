@@ -462,8 +462,13 @@ fn sanitize_hosted_event(record: &mut EventRecord) {
         AgentEvent::MiddlewareFailed { error, .. } => {
             *error = "hosted middleware failed".to_string();
         }
-        AgentEvent::RunFailed { error, .. } => {
+        AgentEvent::RunFailed { error, outcome, .. } => {
             *error = "hosted agent invocation failed".to_string();
+            // The typed outcome mirrors the raw error text; keep its
+            // classification (reason, class, phase) and drop the detail.
+            if let Some(outcome) = outcome {
+                outcome.message = error.clone();
+            }
         }
         _ => {}
     }
