@@ -402,6 +402,28 @@ fn tracker_retract_and_rebase_are_explicit() {
     );
 }
 
+/// Replays scripted responses for a model without native structured output, so
+/// the `answer` tool call is the structured-output channel.
+struct ToolStructuredScript {
+    profile: tinyinference_llm::model::ModelProfile,
+    responses: std::sync::Mutex<std::collections::VecDeque<ModelResponse>>,
+}
+
+#[async_trait]
+impl ChatModel<()> for ToolStructuredScript {
+    fn profile(&self) -> Option<&tinyinference_llm::model::ModelProfile> {
+        Some(&self.profile)
+    }
+    async fn invoke(&self, _: &(), _: ModelRequest) -> tinyinference_llm::Result<ModelResponse> {
+        Ok(self
+            .responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("the model was called more often than scripted"))
+    }
+}
+
 /// A mixed structured turn is closed before its queued steering is drained, so
 /// the queued message is announced after `TurnCompleted` and is not counted as
 /// one of that turn's tool results.
@@ -419,7 +441,15 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
         "",
     );
     let mut harness: AgentHarness<()> = AgentHarness::new();
-    harness.register_model("mock", Arc::new(ScriptedModel::new(vec![mixed, last.clone(), last])));
+    harness.register_model("mock", Arc::new(ToolStructuredScript {
+            profile: tinyinference_llm::model::ModelProfile {
+                tool_calling: true,
+                native_structured_output: false,
+                json_schema: false,
+                ..Default::default()
+            },
+            responses: std::sync::Mutex::new(vec![mixed, last].into()),
+        }));
     harness.register_tool(Arc::new(EchoTool));
     harness.with_policy(RunPolicy {
         end_strategy: crate::runtime::EndStrategy::Exhaustive,
