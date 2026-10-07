@@ -1053,6 +1053,9 @@ struct TerminalGuard<C: Clone + Send + Sync + 'static> {
     terminal: Option<SessionTerminal>,
     /// The driver's own typed classification of a failure, when it supplied one.
     outcome: Option<TerminalOutcome>,
+    /// `true` until a real terminal is set: the drop-time default means the
+    /// caller abandoned the turn, which is a cancellation.
+    abandoned: bool,
     committed: bool,
 }
 
@@ -1061,34 +1064,38 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
         Self {
             hooks,
             terminal: Some(SessionTerminal::Failed("session turn dropped".into())),
-            // A turn future dropped mid-flight was abandoned by its caller.
-            outcome: Some(TerminalOutcome::new(
-                TerminalReason::Cancelled,
-                "session turn dropped",
-            )),
+            outcome: None,
+            abandoned: true,
             committed: false,
         }
     }
 
     fn set(&mut self, terminal: SessionTerminal) {
-        // An explicit terminal replaces the drop-time default; a driver's typed
-        // outcome (set separately, earlier) is kept.
-        if self.terminal_is_default() {
-            self.outcome = None;
-        }
         self.terminal = Some(terminal);
-    }
-
-    fn terminal_is_default(&self) -> bool {
-        matches!(&self.terminal, Some(SessionTerminal::Failed(m)) if m == "session turn dropped")
+        self.abandoned = false;
     }
 
     fn set_outcome(&mut self, outcome: Option<TerminalOutcome>) {
         self.outcome = outcome;
     }
 
+    /// Takes the pending terminal with its typed outcome: the driver's if it
+    /// gave one, a cancellation if the turn was abandoned, else derived.
+    fn take_pending(&mut self) -> Option<(SessionTerminal, TerminalOutcome)> {
+        let terminal = self.terminal.take()?;
+        let outcome = self.outcome.take().unwrap_or_else(|| {
+            if self.abandoned {
+                TerminalOutcome::new(TerminalReason::Cancelled, "session turn dropped")
+            } else {
+                terminal.outcome()
+            }
+        });
+        Some((terminal, outcome))
+    }
+
     fn finalize_commit(&mut self, receipt: CommitReceipt<C>) -> tokio::task::JoinHandle<()> {
         let terminal = SessionTerminal::Completed(receipt.outcome.clone());
+        let outcome = terminal.outcome();
         // Removing the guard's terminal transfers exactly-once ownership to
         // the finalizer. `finish` and `Drop` then become no-ops for this turn.
         self.terminal = None;
@@ -1096,6 +1103,7 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
         let hooks = self.hooks.clone();
         tokio::spawn(async move {
             let _ = hooks.after_commit(receipt).await;
+            let _ = hooks.on_terminal_outcome(outcome).await;
             let _ = hooks.on_terminal(terminal).await;
         })
     }
@@ -1105,21 +1113,23 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
     }
 
     async fn finish(mut self) -> Result<(), RuntimeError> {
-        let Some(terminal) = self.terminal.take() else {
+        let Some((terminal, outcome)) = self.take_pending() else {
             return Ok(());
         };
+        let _ = self.hooks.on_terminal_outcome(outcome).await;
         self.hooks.on_terminal(terminal).await
     }
 }
 
 impl<C: Clone + Send + Sync + 'static> Drop for TerminalGuard<C> {
     fn drop(&mut self) {
-        let Some(terminal) = self.terminal.take() else {
+        let Some((terminal, outcome)) = self.take_pending() else {
             return;
         };
         let hooks = self.hooks.clone();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn(async move {
+                let _ = hooks.on_terminal_outcome(outcome).await;
                 let _ = hooks.on_terminal(terminal).await;
             });
         }
