@@ -584,3 +584,54 @@ fn emit_delivers_normally_once_a_listener_subscribes_after_a_quiet_run() {
     assert_eq!(recorder.events().len(), 1);
     assert_eq!(recorder.events()[0].offset, 1);
 }
+
+#[test]
+fn terminal_and_lifecycle_events_have_stable_kinds() {
+    assert_eq!(AgentEvent::TurnStarted { turn: 1 }.kind(), "turn.started");
+    assert_eq!(
+        AgentEvent::TurnCompleted {
+            turn: 1,
+            tool_result_count: 0,
+            tool_call_ids: vec![]
+        }
+        .kind(),
+        "turn.completed"
+    );
+    assert_eq!(
+        AgentEvent::MessageAppended {
+            role: "user".into(),
+            index: 0,
+            call_id: None,
+            message: None
+        }
+        .kind(),
+        "message.appended"
+    );
+}
+
+#[test]
+fn run_events_with_outcomes_round_trip_and_old_payloads_still_parse() {
+    use crate::terminal::{TerminalOutcome, TerminalReason};
+    let failed = AgentEvent::RunFailed {
+        run_id: RunId::new("r"),
+        error: "boom".into(),
+        outcome: Some(TerminalOutcome::new(TerminalReason::ToolFailed, "boom")),
+    };
+    let json = serde_json::to_value(&failed).unwrap();
+    assert_eq!(json["outcome"]["reason"], "tool_failed");
+    assert_eq!(serde_json::from_value::<AgentEvent>(json).unwrap(), failed);
+
+    // Journals written before the field existed deserialize with `None`.
+    let old: AgentEvent =
+        serde_json::from_value(serde_json::json!({"kind": "run_completed", "run_id": "r"}))
+            .unwrap();
+    assert!(matches!(old, AgentEvent::RunCompleted { outcome: None, .. }));
+    let old: AgentEvent = serde_json::from_value(
+        serde_json::json!({"kind": "queued_message_applied", "lane": "steer", "count": 2}),
+    )
+    .unwrap();
+    assert!(matches!(
+        old,
+        AgentEvent::QueuedMessageApplied { count: 2, first_index: 0, .. }
+    ));
+}
