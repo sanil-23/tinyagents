@@ -30,7 +30,12 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         }
         let count = items.len();
         messages.extend(items);
-        let record = ctx.emit(AgentEvent::QueuedMessageApplied { lane, count });
+        let record = ctx.emit(AgentEvent::QueuedMessageApplied {
+            lane,
+            count,
+            first_index: 0,
+            messages: Vec::new(),
+        });
         status.set_last_event(record.id);
         tracing::debug!(
             target: "tinyagents::agent_loop",
