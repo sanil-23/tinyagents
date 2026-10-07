@@ -441,7 +441,9 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
         "",
     );
     let mut harness: AgentHarness<()> = AgentHarness::new();
-    harness.register_model("mock", Arc::new(ToolStructuredScript {
+    harness.register_model(
+        "mock",
+        Arc::new(ToolStructuredScript {
             profile: tinyinference_llm::model::ModelProfile {
                 tool_calling: true,
                 native_structured_output: false,
@@ -449,7 +451,8 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
                 ..Default::default()
             },
             responses: std::sync::Mutex::new(vec![mixed, last].into()),
-        }));
+        }),
+    );
     harness.register_tool(Arc::new(EchoTool));
     harness.with_policy(RunPolicy {
         end_strategy: crate::runtime::EndStrategy::Exhaustive,
@@ -461,7 +464,10 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
     });
     let queue = Arc::new(RunQueue::new());
     queue
-        .push(QueueLane::Steer, Message::tool("queued-call", "late result"))
+        .push(
+            QueueLane::Steer,
+            Message::tool("queued-call", "late result"),
+        )
         .await;
     let recorder = EventRecorder::new();
     let ctx = RunContext::new(RunConfig::new("mixed"), ())
@@ -486,5 +492,8 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
         .iter()
         .position(|line| line.ends_with(":queued-call"))
         .expect("queued message announced");
-    assert!(completed < queued, "queued message after TurnCompleted: {lines:?}");
+    assert!(
+        completed < queued,
+        "queued message after TurnCompleted: {lines:?}"
+    );
 }

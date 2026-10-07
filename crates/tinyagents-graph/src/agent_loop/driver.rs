@@ -247,10 +247,7 @@ where
         };
         run.terminal = terminal.clone();
         status.mark_running(HarnessPhase::Middleware);
-        let after_agent = harness
-            .middleware()
-            .run_after_agent(ctx, state, run)
-            .await;
+        let after_agent = harness.middleware().run_after_agent(ctx, state, run).await;
         if let Err(hook_error) = after_agent {
             if outcome.is_err() {
                 // The originating node failure stays authoritative, as in the
