@@ -253,14 +253,7 @@ async fn queued_message_applied_carries_the_applied_messages() {
 pub(super) fn mirror_roles(events: &[AgentEvent], seed: &[Message]) -> Vec<String> {
     let mut roles: Vec<String> = seed
         .iter()
-        .map(|m| match m {
-            Message::System(_) => "system",
-            Message::User(_) => "user",
-            Message::Assistant(_) => "assistant",
-            Message::Tool(_) => "tool",
-            Message::Custom(_) => "custom",
-        })
-        .map(str::to_string)
+        .map(|m| super::lifecycle::role_of(m).to_string())
         .collect();
     for event in events {
         match event {
@@ -283,7 +276,7 @@ pub(super) fn assert_mirrors(events: &[AgentEvent], seed: &[Message], transcript
     let mirror = mirror_roles(events, seed);
     let actual: Vec<String> = transcript
         .iter()
-        .map(|m| m.role_name().to_string())
+        .map(|m| super::lifecycle::role_of(m).to_string())
         .collect();
     assert_eq!(mirror.len(), actual.len(), "{mirror:?} vs {actual:?}");
     for (m, a) in mirror.iter().zip(&actual) {
@@ -366,8 +359,8 @@ async fn steer_between_turns_reports_the_right_first_index() {
 #[test]
 fn tracker_retract_and_rebase_are_explicit() {
     use super::lifecycle::TurnTracker;
-    let sink = crate::events::EventSink::new();
-    let recorder = EventRecorder::with_sink(sink.clone());
+    let recorder = EventRecorder::new();
+    let sink = recorder.sink();
     let capture = PayloadCapture::default();
     let mut tracker = TurnTracker::new(0);
     let mut messages = vec![Message::user("a"), Message::user("b"), Message::user("c")];
