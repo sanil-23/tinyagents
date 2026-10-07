@@ -76,7 +76,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
 
         // One typed answer to "how did the loop end", derived once here so the
         // event, `run.terminal` and the legacy fields cannot disagree.
-        let terminal = TerminalOutcome::from_loop_exit(&exit, run.model_calls > 0);
+        let mut terminal = TerminalOutcome::from_loop_exit(&exit, run.model_calls > 0);
+        // A repeat / no-progress guard halts by pausing; its marker says so.
+        if matches!(exit, LoopExit::Paused(_))
+            && let Some(summary) = ctx.halted_by_guard.take()
+        {
+            terminal = TerminalOutcome::halted(summary).with_provider_started(run.model_calls > 0);
+        }
         run.terminal = Some(terminal.clone());
 
         match exit {

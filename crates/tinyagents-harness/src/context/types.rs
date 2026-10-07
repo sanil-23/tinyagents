@@ -491,6 +491,9 @@ pub struct RunContext<Ctx = ()> {
     /// Lifecycle cursor over the working transcript: which messages were
     /// announced and which turn is open (see `agent_loop::lifecycle`).
     pub(crate) turns: crate::agent_loop::TurnTracker,
+    /// Set by a no-progress / repeat guard that paused the run, holding its
+    /// root-cause summary, so the loop can report `TerminalReason::Halted`.
+    pub(crate) halted_by_guard: Option<String>,
     /// The [`CallId`] the agent loop minted for the model call currently in
     /// flight through the model-wrap middleware onion, mirroring
     /// [`crate::events::HarnessRunStatus::active_model_call`].
