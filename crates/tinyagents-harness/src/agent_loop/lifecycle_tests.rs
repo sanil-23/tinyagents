@@ -423,7 +423,7 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
     harness.register_tool(Arc::new(EchoTool));
     harness.with_policy(RunPolicy {
         end_strategy: crate::runtime::EndStrategy::Exhaustive,
-        default_response_format: Some(crate::runtime::ResponseFormat::auto(
+        default_response_format: Some(tinyinference_llm::model::ResponseFormat::auto(
             "answer",
             json!({"type": "object"}),
         )),
