@@ -274,10 +274,15 @@ where
                         .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
                 });
                 status.set_last_event(record.id);
-                run.paused = Some(PauseState {
-                    reason,
-                    paused_at_checkpoint: 0,
-                });
+                if !matches!(
+                    run.terminal.as_ref().map(|outcome| outcome.reason),
+                    Some(TerminalReason::Halted)
+                ) {
+                    run.paused = Some(PauseState {
+                        reason,
+                        paused_at_checkpoint: 0,
+                    });
+                }
                 Ok(())
             }
             Err(error) => Err(error),
