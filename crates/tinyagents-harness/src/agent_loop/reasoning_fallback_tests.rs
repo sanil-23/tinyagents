@@ -91,3 +91,24 @@ fn a_budget_only_config_is_replaced() {
         Some(ReasoningConfig::effort(ReasoningEffort::None))
     );
 }
+
+#[test]
+fn a_repeat_note_hands_reasoning_back_mid_hold_off() {
+    let mut fallback = ReasoningFallback::default();
+    assert!(
+        !fallback.on_repeat_note(),
+        "nothing to restore while reasoning is on"
+    );
+    for _ in 0..4 {
+        fallback.on_dead_call();
+    }
+    assert!(
+        fallback.active(),
+        "eight calls of hold-off after the fourth death"
+    );
+    assert!(fallback.on_repeat_note());
+    assert!(!fallback.active(), "reasoning is back for the next call");
+    // The backoff scale stands: the next death holds off for the clamped
+    // eight again.
+    assert_eq!(fallback.on_dead_call(), REASONING_FALLBACK_MAX_HOLDOFF);
+}

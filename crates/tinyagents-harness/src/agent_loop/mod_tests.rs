@@ -9463,3 +9463,82 @@ async fn the_nudge_after_a_dead_call_says_where_to_think_instead() {
         "and say where to think: {last_user:?}"
     );
 }
+
+/// A middleware that notes a repeat on every tool result, standing in for
+/// the repeat-progress guard's warning.
+struct RepeatNoter;
+
+#[async_trait]
+impl Middleware<(), ()> for RepeatNoter {
+    fn name(&self) -> &str {
+        "repeat-noter"
+    }
+
+    async fn after_tool(
+        &self,
+        ctx: &mut RunContext<()>,
+        _state: &(),
+        _invocation: &ToolInvocationIdentity,
+        _result: &mut ToolResult,
+    ) -> Result<()> {
+        ctx.note_repeat();
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_repeat_note_hands_reasoning_back_before_the_hold_off_is_spent() {
+    // Two deaths hold reasoning off for two live calls. The retry runs
+    // without it and makes a tool call; a repeat noted on that call's result
+    // means the model is looping without reasoning, so the next call goes
+    // out at the configured effort although one hold-off call is left.
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
+        truncated_empty_response(2048),
+        tool_call_response("c1", "fake", json!({})),
+        text_response("done", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness
+        .register_model("mock", Arc::clone(&model) as _)
+        .register_tool(Arc::new(FakeTool::new("fake", "tool output")))
+        .push_middleware(Arc::new(RepeatNoter));
+    harness.with_policy(RunPolicy {
+        default_reasoning: Some(ReasoningConfig::effort(ReasoningEffort::High)),
+        ..RunPolicy::default()
+    });
+    let recorder = crate::testkit::EventRecorder::new();
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-reasoning-restored").with_max_turn_output_tokens(2048),
+        (),
+    )
+    .with_events(recorder.sink());
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(run.text(), Some("done".to_string()));
+    let efforts: Vec<Option<ReasoningEffort>> = model
+        .requests()
+        .iter()
+        .map(|r| r.reasoning.as_ref().and_then(|c| c.effort))
+        .collect();
+    assert_eq!(
+        efforts,
+        vec![
+            Some(ReasoningEffort::High),
+            Some(ReasoningEffort::None),
+            Some(ReasoningEffort::None),
+            Some(ReasoningEffort::High),
+        ],
+        "the repeat note ends the hold-off early"
+    );
+    assert!(
+        recorder.events().iter().any(|e| matches!(
+            e,
+            AgentEvent::ControlApplied { control, .. } if control == "reasoning_restored"
+        )),
+        "the restore is observable; got kinds {:?}",
+        recorder.kinds()
+    );
+}

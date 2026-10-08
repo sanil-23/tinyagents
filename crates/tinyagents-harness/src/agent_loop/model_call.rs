@@ -1963,12 +1963,14 @@ impl<State: Send + Sync, Ctx: Send + Sync> ToolBaseCall<State, Ctx>
     }
 }
 
-/// Reasoning tokens a streamed reasoning text amounts to, estimated at four
-/// characters per token. English prose runs a little under that and code or
-/// maths a little over, so the estimate under-counts and a bound built on it
-/// fires late rather than early.
+/// Reasoning tokens a streamed reasoning text amounts to, estimated at three
+/// characters per token. Measured on deepseek-v4.1-flash, whose reasoning is
+/// dense with code, numbers and short tokens, 36k characters were about 13k
+/// tokens (2.7 per token); English prose runs nearer four. Three keeps the
+/// estimate on the low side for this kind of text, so a bound built on it
+/// fires a little late rather than early.
 fn estimated_reasoning_tokens(reasoning: &str) -> u64 {
-    (reasoning.len() as u64) / 4
+    (reasoning.len() as u64) / 3
 }
 
 /// The response the reasoning watchdog hands the loop in place of the call it

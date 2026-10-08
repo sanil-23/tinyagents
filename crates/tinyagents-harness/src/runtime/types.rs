@@ -385,8 +385,9 @@ pub struct RunPolicy {
     /// nudge) runs after a fraction of the wait.
     ///
     /// Reasoning length is estimated from the streamed reasoning text at
-    /// four characters per token, which under-counts, so the bound fires late
-    /// rather than early. Visible text or a tool-call fragment before the
+    /// three characters per token (measured: 36k characters of
+    /// deepseek-v4.1-flash reasoning were about 13k tokens), which
+    /// under-counts, so the bound fires late rather than early. Visible text or a tool-call fragment before the
     /// bound disarms it: the model is answering. Unary (non-streamed) calls
     /// are not bounded.
     ///

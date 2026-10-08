@@ -640,6 +640,25 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // Applied last so it wins over the policy default and the profile
             // mapping: those describe the effort the run wants, this is the
             // one the transcript can get past.
+            // A repeat noted on the last tool result while reasoning is off
+            // (`RunContext::note_repeat`) means the model is looping without
+            // it: hand reasoning back for this call.
+            if ctx.take_repeat_noted()
+                && self.policy.truncated_empty_reasoning_fallback
+                && turn_recovery.reasoning_fallback.on_repeat_note()
+            {
+                tracing::info!(
+                    target: "tinyagents::agent_loop",
+                    run_id = %ctx.run_id(),
+                    "[agent_loop] repeat noted while reasoning was off; reasoning restored for the next call"
+                );
+                ctx.emit(AgentEvent::ControlApplied {
+                    control: "reasoning_restored".to_string(),
+                    detail: "the model repeated itself with reasoning switched off; reasoning is \
+                             back on for the next call"
+                        .to_string(),
+                });
+            }
             if self.policy.truncated_empty_reasoning_fallback
                 && let Some(previous) = turn_recovery.reasoning_fallback.apply(&mut request)
             {

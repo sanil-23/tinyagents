@@ -49,6 +49,20 @@ impl ReasoningFallback {
         self.holdoff = self.holdoff.saturating_sub(1);
     }
 
+    /// A repeat was just noted on a tool result while reasoning is off: the
+    /// model is looping without it. Hands reasoning back for the next call
+    /// and returns whether anything changed. The backoff scale stands, so a
+    /// dead call after this re-engages the fallback at its current stretch;
+    /// the run then alternates between thinking and acting instead of doing
+    /// only one.
+    pub(super) fn on_repeat_note(&mut self) -> bool {
+        if !self.active() {
+            return false;
+        }
+        self.holdoff = 0;
+        true
+    }
+
     /// Whether the next call goes out without reasoning.
     pub(super) fn active(&self) -> bool {
         self.holdoff > 0
