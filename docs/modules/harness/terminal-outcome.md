@@ -33,3 +33,9 @@ but no transcript rows, so they never emit `MessageAppended`.
 On `RunCompleted` / `RunFailed` the `outcome` field is `Some` for every run this
 crate ends; it is `None` only when deserializing journals written before the
 field existed.
+
+Scope: the typed outcome is published by both the direct and the graph loop
+driver, but the turn and message lifecycle events (`TurnStarted`,
+`MessageAppended`, `MessageRetracted`, ...) are emitted by the direct loop only.
+The graph driver does not emit them yet, so graph-engine hosts should not rely
+on them.
