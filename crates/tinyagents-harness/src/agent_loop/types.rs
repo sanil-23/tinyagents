@@ -163,6 +163,9 @@ pub(super) struct ResponseTurn<'a> {
     pub(super) tool_calls: &'a [ToolCall],
     /// The output cap actually sent with the request that produced `response`.
     pub(super) attempt_max_tokens: Option<u32>,
+    /// When the model call that produced `response` started (`ids::now_ms`),
+    /// so a recovery can weigh a retry against how long the call just took.
+    pub(super) started_at_ms: u64,
     /// What the dialect layer recovered or withheld from the response text.
     pub(super) recovery: &'a super::dialect::TextRecovery,
     /// Whether the request offered a callable tool this turn.

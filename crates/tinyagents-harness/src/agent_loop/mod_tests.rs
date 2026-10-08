@@ -1137,12 +1137,14 @@ async fn truncated_empty_response_retries_then_succeeds() {
         "the retry should be observable; got kinds {:?}",
         recorder.kinds()
     );
-    // The first attempt sent the configured 2048 cap; the retry doubled it.
+    // The first retry re-sends at the same cap: most dead calls are a long
+    // think the model does not repeat, and a cap raised for them makes every
+    // later dead call cost two to four times as long.
     let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
     assert_eq!(
         sent,
-        vec![Some(2048), Some(4096)],
-        "the retried request should carry double the original token budget"
+        vec![Some(2048), Some(2048)],
+        "the first retry keeps the original token budget"
     );
 }
 
@@ -1152,7 +1154,10 @@ async fn truncated_empty_boost_does_not_leak_into_later_turns() {
     // recovery state, but they used to live for the whole run — so every turn
     // after a recovered one was dispatched at the boosted cap (overriding the
     // caller's `max_turn_output_tokens`) and a later truncation got no retry.
+    // Two deaths at the cap raise it for the second retry; the next turn is
+    // back at the configured per-turn cap.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
         truncated_empty_response(2048),
         tool_call_response("c1", "fake", json!({})),
         text_response("done", 4, 3),
@@ -1175,10 +1180,253 @@ async fn truncated_empty_boost_does_not_leak_into_later_turns() {
     let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
     assert_eq!(
         sent,
-        vec![Some(2048), Some(4096), Some(2048)],
-        "only the retry of the truncated turn carries the boost; the next turn \
+        vec![Some(2048), Some(2048), Some(4096), Some(2048)],
+        "only the second retry of the truncated turn carries the boost; the next turn \
          is back at the configured per-turn cap"
     );
+}
+
+#[tokio::test]
+async fn truncated_empty_retry_stops_at_the_cap_ceiling_and_nudges() {
+    // Once the cap sits at its 4x ceiling, a retry re-sends the transcript
+    // that just died at that very cap, so it fails the same way at the same
+    // cost (two 65k dead calls of three minutes each ended one run with
+    // nothing written). With retries still in hand, the loop must skip the
+    // retry, say why, and nudge the model to take a smaller step instead.
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
+        truncated_empty_response(2048),
+        truncated_empty_response(4096),
+        truncated_empty_response(8192),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    harness.with_policy(RunPolicy {
+        truncated_empty_retries: 4,
+        ..RunPolicy::default()
+    });
+
+    use crate::testkit::EventRecorder;
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-ceiling").with_max_turn_output_tokens(2048),
+        (),
+    )
+    .with_events(recorder.sink());
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the nudged call recovers");
+
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    assert_eq!(
+        run.model_calls, 5,
+        "a same-cap retry, two climbs to the ceiling, then the dead call at the ceiling is nudged, not retried"
+    );
+    let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
+    assert_eq!(sent, vec![Some(2048), Some(2048), Some(4096), Some(8192), Some(8192)]);
+    let last = model.requests().last().expect("five requests").messages.clone();
+    assert_eq!(
+        last.last().map(|m| m.text()),
+        Some(super::run_loop::TRUNCATED_EMPTY_ANSWER_NUDGE.to_string()),
+        "the fifth call carries the nudge rather than a bare re-send"
+    );
+    let skipped: Vec<String> = recorder
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ControlApplied { control, detail }
+                if control == "truncated_empty_retry_skipped" =>
+            {
+                Some(detail.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(skipped.len(), 1, "exactly one skip, for the dead call at the ceiling");
+    assert!(
+        skipped[0].contains("already at its ceiling (8192)"),
+        "the skip names the cap: {}",
+        skipped[0]
+    );
+}
+
+/// A scripted model whose first call takes `delay`: a dead call that cost
+/// real wall-clock time, which is what the retry plan measures.
+struct SlowFirstCall {
+    inner: Arc<crate::testkit::ScriptedModel>,
+    delay: std::time::Duration,
+    calls: Mutex<u32>,
+}
+
+#[async_trait]
+impl<State: Send + Sync> ChatModel<State> for SlowFirstCall {
+    async fn invoke(
+        &self,
+        state: &State,
+        request: ModelRequest,
+    ) -> tinyinference_llm::Result<ModelResponse> {
+        let first = {
+            let mut calls = self.calls.lock().expect("calls lock");
+            *calls += 1;
+            *calls == 1
+        };
+        if first {
+            tokio::time::sleep(self.delay).await;
+        }
+        self.inner.invoke(state, request).await
+    }
+}
+
+#[tokio::test]
+async fn truncated_empty_retry_yields_to_the_clock() {
+    // A dead call of 400 ms for 2048 tokens says a retry at the same cap
+    // would take about 400 ms. With 600 ms of a 1 s run left, that is more
+    // than half the clock, so the loop nudges instead of retrying, and pins
+    // the cap to what the clock affords (here the floor: the original cap).
+    let scripted = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
+        text_response("recovered", 4, 3),
+    ]));
+    let model = Arc::new(SlowFirstCall {
+        inner: Arc::clone(&scripted),
+        delay: std::time::Duration::from_millis(400),
+        calls: Mutex::new(0),
+    });
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", model as _);
+    harness.with_policy(RunPolicy {
+        limits: RunLimits::default().with_max_wall_clock_ms(Some(1_000)),
+        ..RunPolicy::default()
+    });
+
+    use crate::testkit::EventRecorder;
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-clock").with_max_turn_output_tokens(2048),
+        (),
+    )
+    .with_events(recorder.sink());
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the nudged call recovers inside the clock");
+
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    assert_eq!(run.model_calls, 2, "no retry: straight to the nudge");
+    let sent: Vec<Option<u32>> = scripted.requests().iter().map(|r| r.max_tokens).collect();
+    assert_eq!(
+        sent,
+        vec![Some(2048), Some(2048)],
+        "the nudged call runs at the cap the clock affords, never below the original"
+    );
+    let skipped: Vec<String> = recorder
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ControlApplied { control, detail }
+                if control == "truncated_empty_retry_skipped" =>
+            {
+                Some(detail.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(skipped.len(), 1);
+    assert!(
+        skipped[0].contains("would run about") && skipped[0].contains("left"),
+        "the skip explains the clock arithmetic: {}",
+        skipped[0]
+    );
+}
+
+#[tokio::test]
+async fn truncated_empty_nudges_repeat_while_the_clock_allows_with_a_halving_cap() {
+    // A nudged call that dies too used to end the turn (one run closed with
+    // 21 of 30 minutes unused). With a clock that still has room, the loop
+    // nudges again and halves the cap each time, down to the floor.
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
+        truncated_empty_response(2048),
+        truncated_empty_response(4096),
+        truncated_empty_response(4096),
+        truncated_empty_response(2048),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    harness.with_policy(RunPolicy {
+        limits: RunLimits::default().with_max_wall_clock_ms(Some(60_000)),
+        ..RunPolicy::default()
+    });
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-clock-nudges").with_max_turn_output_tokens(2048),
+        (),
+    );
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the third nudge recovers");
+
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    assert_eq!(run.model_calls, 6);
+    let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
+    assert_eq!(
+        sent,
+        vec![Some(2048), Some(2048), Some(4096), Some(4096), Some(2048), Some(2048)],
+        "a same-cap retry, one climb, then nudges at the held cap, half of it, and the floor"
+    );
+    let last = model.requests().last().expect("six requests").messages.clone();
+    let text = last.last().map(|m| m.text()).unwrap_or_default();
+    assert!(
+        text.contains("cut off again") && text.contains("2048 tokens"),
+        "a repeated nudge names the new limit: {text}"
+    );
+}
+
+#[tokio::test]
+async fn truncated_empty_nudges_stop_at_their_limit_even_with_clock_left() {
+    // A model that dies at every cap must not be nudged for the rest of the
+    // run: one first attempt, two retries and six nudges, then the blank is
+    // surfaced and the run closes.
+    let responses: Vec<ModelResponse> = (0..12).map(|_| truncated_empty_response(2048)).collect();
+    let model = Arc::new(crate::testkit::ScriptedModel::new(responses));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    harness.with_policy(RunPolicy {
+        limits: RunLimits::default().with_max_wall_clock_ms(Some(60_000)),
+        ..RunPolicy::default()
+    });
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-clock-limit").with_max_turn_output_tokens(2048),
+        (),
+    );
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("a blank is surfaced, not an error, by default");
+    assert_eq!(run.model_calls, 1 + 2 + 6, "first attempt, two retries, six nudges");
+    assert_eq!(run.text().unwrap_or_default().trim(), "");
+}
+
+#[tokio::test]
+async fn truncated_empty_nudges_do_not_repeat_without_a_clock() {
+    // No wall clock: nothing to spend on a longer run, so the policy's one
+    // nudge still applies and a second dead nudge surfaces the blank.
+    let responses: Vec<ModelResponse> = (0..6).map(|_| truncated_empty_response(2048)).collect();
+    let model = Arc::new(crate::testkit::ScriptedModel::new(responses));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-no-clock").with_max_turn_output_tokens(2048),
+        (),
+    );
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("a blank is surfaced by default");
+    assert_eq!(run.model_calls, 1 + 2 + 1, "first attempt, two retries, one nudge");
 }
 
 #[tokio::test]
@@ -1237,6 +1485,7 @@ async fn truncated_empty_retries_exhausted_returns_blank_by_default() {
     // is the nudge.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
         truncated_empty_response(2048),
+        truncated_empty_response(2048),
         truncated_empty_response(4096),
         truncated_empty_response(4096),
     ]));
@@ -1254,8 +1503,8 @@ async fn truncated_empty_retries_exhausted_returns_blank_by_default() {
 
     assert_eq!(run.text(), Some(String::new()));
     assert_eq!(
-        run.model_calls, 3,
-        "one original attempt, one boosted retry, one nudge"
+        run.model_calls, 4,
+        "one original attempt, a same-cap retry, a boosted retry, one nudge"
     );
 }
 
@@ -1267,6 +1516,7 @@ async fn truncated_empty_nudge_after_spent_retries_reaches_the_tool_call() {
     // is spent, the loop must tell the model plainly what happened and keep
     // going, so the tool call it was deliberating about still happens.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
         truncated_empty_response(2048),
         truncated_empty_response(4096),
         tool_call_response("c1", "fake", json!({})),
@@ -1287,20 +1537,20 @@ async fn truncated_empty_nudge_after_spent_retries_reaches_the_tool_call() {
         .expect("the nudged run reaches the tool call and finishes");
 
     assert_eq!(run.text(), Some("done".to_string()));
-    assert_eq!(run.model_calls, 4);
+    assert_eq!(run.model_calls, 5);
     let requests = model.requests();
-    let nudged = &requests[2].messages;
+    let nudged = &requests[3].messages;
     let nudge = nudged.last().map(Message::text).unwrap_or_default();
     assert!(
         nudge.contains("ran out of output tokens") && nudge.contains("tool call"),
-        "the third request ends with the truncation nudge; got {nudge:?}"
+        "the fourth request ends with the truncation nudge; got {nudge:?}"
     );
     assert!(
         nudged.iter().all(|m| !matches!(m, Message::Assistant(_))),
         "the blank assistant rows are not replayed"
     );
     assert!(
-        requests[3]
+        requests[4]
             .messages
             .iter()
             .any(|m| m.text().contains("tool output")),
@@ -1313,6 +1563,7 @@ async fn truncated_empty_nudge_asks_for_an_answer_when_no_tool_is_callable() {
     // A turn with nothing to call (here: no tools registered) must not be told
     // to "make the next tool call" — that only invites a call that cannot run.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
         truncated_empty_response(2048),
         truncated_empty_response(4096),
         text_response("short answer", 4, 3),
@@ -1327,7 +1578,7 @@ async fn truncated_empty_nudge_asks_for_an_answer_when_no_tool_is_callable() {
 
     assert_eq!(run.text(), Some("short answer".to_string()));
     let requests = model.requests();
-    let nudge = requests[2]
+    let nudge = requests[3]
         .messages
         .last()
         .map(Message::text)
@@ -1391,6 +1642,7 @@ async fn truncated_empty_nudge_disabled_by_zero_policy() {
     // retry the blank reply is the final answer.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
         truncated_empty_response(2048),
+        truncated_empty_response(2048),
         truncated_empty_response(4096),
     ]));
     let mut harness: AgentHarness<()> = AgentHarness::new();
@@ -1404,7 +1656,7 @@ async fn truncated_empty_nudge_disabled_by_zero_policy() {
         .invoke_default(&(), vec![Message::user("hi")])
         .await
         .expect("with nudges disabled the blank final is returned");
-    assert_eq!(run.model_calls, 2);
+    assert_eq!(run.model_calls, 3);
     assert_eq!(run.text(), Some(String::new()));
 }
 
@@ -1413,6 +1665,7 @@ async fn truncated_empty_retries_exhausted_errors_when_guard_enabled() {
     // With the empty-response guard on, exhausting the retries and the nudge
     // surfaces the typed EmptyResponse error rather than a blank success.
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response(2048),
         truncated_empty_response(2048),
         truncated_empty_response(4096),
         truncated_empty_response(4096),
@@ -1826,7 +2079,11 @@ async fn an_empty_max_tokens_reply_takes_the_truncated_empty_retry_path() {
         .expect("retried, not surfaced");
 
     assert_eq!(run.text(), Some("recovered".to_string()));
-    assert_eq!(model.requests()[1].max_tokens, Some(4096));
+    assert_eq!(
+        model.requests()[1].max_tokens,
+        Some(2048),
+        "the first retry re-sends at the same cap"
+    );
 }
 
 #[tokio::test]

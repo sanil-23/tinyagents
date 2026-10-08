@@ -901,6 +901,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 response: &response,
                 tool_calls: &tool_calls,
                 attempt_max_tokens,
+                started_at_ms: model_started_at_ms,
                 recovery: &recovery,
                 tools_available: tools_available_this_turn,
                 text_dialect_calls_recoverable: forced_text_dialect
