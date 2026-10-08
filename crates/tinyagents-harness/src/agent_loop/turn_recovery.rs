@@ -140,9 +140,15 @@ impl TruncatedRetryPlan {
     /// there is no affordable nudge cap.
     pub(super) fn nudge_cap(&self) -> Option<u32> {
         let halved = self.halved_cap()?;
-        match (self.ms_per_token(), self.remaining, self.affordable_cap()) {
-            (Some(_), Some(_), Some(affordable)) => Some(halved.min(affordable)),
-            (Some(_), Some(_), None) => None,
+        match (self.ms_per_token(), self.remaining) {
+            (Some(rate), Some(remaining)) => {
+                let affordable = (remaining.as_millis() as f64
+                    * TRUNCATED_RETRY_CLOCK_SHARE
+                    / rate) as u64;
+                let minimum = halved.min(TRUNCATED_NUDGE_CAP_FLOOR);
+                (affordable >= u64::from(minimum))
+                    .then_some(halved.min(affordable.min(u64::from(u32::MAX)) as u32))
+            }
             _ => Some(halved),
         }
     }
