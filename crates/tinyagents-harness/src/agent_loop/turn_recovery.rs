@@ -159,12 +159,19 @@ impl TruncatedRetryPlan {
         let Some(remaining) = self.remaining else {
             return false;
         };
-        let expected_ms = match (self.ms_per_token(), self.nudge_cap()) {
-            (Some(rate), Some(cap)) => (rate * cap as f64) as u64,
-            _ => self.dead_ms,
+        let expected_ms = match (self.current, self.ms_per_token(), self.nudge_cap()) {
+            (None, _, _) => {
+                // An uncapped call cannot be shortened by changing its output
+                // limit. Still allow a clock-bounded nudge when the previous
+                // call's duration leaves enough room for another attempt.
+                self.dead_ms
+            }
+            (_, Some(rate), Some(cap)) => (rate * cap as f64) as u64,
+            // A capped call with no affordable nudge cap cannot safely repeat.
+            (_, _, None) => return false,
+            (_, None, Some(_)) => self.dead_ms,
         };
-        self.nudge_cap().is_some()
-            && expected_ms as f64 <= remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE
+        expected_ms as f64 <= remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE
     }
 }
 

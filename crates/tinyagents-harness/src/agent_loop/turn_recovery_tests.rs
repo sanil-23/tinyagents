@@ -72,6 +72,26 @@ fn nudge_is_rejected_when_even_the_minimum_cap_exceeds_the_clock_budget() {
 }
 
 #[test]
+fn uncapped_nudge_uses_the_dead_call_duration_as_its_clock_estimate() {
+    let enough_time = TruncatedRetryPlan {
+        current: None,
+        next: None,
+        base: None,
+        dead_tokens: 0,
+        dead_ms: 1_000,
+        remaining: Some(std::time::Duration::from_millis(3_000)),
+        first_retry: false,
+    };
+    let too_little_time = TruncatedRetryPlan {
+        remaining: Some(std::time::Duration::from_millis(1_000)),
+        ..enough_time
+    };
+
+    assert!(enough_time.another_nudge_fits());
+    assert!(!too_little_time.another_nudge_fits());
+}
+
+#[test]
 fn reset_truncated_empty_clears_only_the_truncated_empty_state() {
     let mut recovery = spent();
     recovery.reset_truncated_empty();

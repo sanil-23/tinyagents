@@ -319,7 +319,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // model act sooner.
         let clock_allows_another_nudge = truncated_retry
             .as_ref()
-            .is_some_and(|plan| plan.nudge_cap().is_some() && plan.another_nudge_fits())
+            .is_some_and(|plan| plan.another_nudge_fits())
             && turn_recovery.truncated_empty_nudges_used < TRUNCATED_CLOCK_NUDGE_LIMIT;
         let clock_only_nudge =
             turn_recovery.truncated_empty_nudges_used >= self.policy.truncated_empty_nudges;
