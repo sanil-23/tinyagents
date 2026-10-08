@@ -441,13 +441,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // `completed` is what made "paused for a human" look identical
                 // to "the model produced an empty final answer".
                 // A deferred run (A2) is resumable for the same reason.
-                let paused = terminal.run.paused.is_some()
-                    || terminal.run.deferred.is_some()
-                    || terminal
-                        .run
-                        .terminal
-                        .as_ref()
-                        .is_some_and(|outcome| outcome.class == TerminalClass::Suspended);
+                // The typed outcome is authoritative (middleware may have
+                // replaced it after the loop set the legacy fields); fall back
+                // to the legacy fields only when no outcome was recorded.
+                let paused = match terminal.run.terminal.as_ref() {
+                    Some(outcome) => outcome.class == TerminalClass::Suspended,
+                    None => terminal.run.paused.is_some() || terminal.run.deferred.is_some(),
+                };
                 // Only `Success` is a completion and `Suspended` is handled by
                 // `paused`; Failure, Timeout and Cancellation outcomes recorded
                 // by middleware on an `Ok` return must not read as completed.
@@ -498,7 +498,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     TerminalOutcome::from_error(&error, site).with_limit_kind(last_limit);
                 // `site` describes this failure; the run may still have reached
                 // the provider on an earlier call.
-                outcome.provider_started |= ctx.provider_started();
+                outcome.provider_started = ctx.provider_started();
                 terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,

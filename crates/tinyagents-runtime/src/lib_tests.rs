@@ -4273,6 +4273,7 @@ async fn driver_failures_deliver_their_typed_outcome_before_the_terminal() {
             TurnOptions::default(),
         )
         .await;
+    wait_for_outcomes(&hook, 1).await;
     assert_eq!(hook.outcomes.lock().unwrap().as_slice(), [typed]);
     assert_eq!(
         hook.order.lock().unwrap().as_slice(),

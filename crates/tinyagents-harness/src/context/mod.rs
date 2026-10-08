@@ -863,6 +863,7 @@ impl<Ctx> RunContext<Ctx> {
     /// Marks the start of a model call: clears the per-call provider flag.
     pub fn begin_model_call(&mut self) {
         self.call_provider_started = false;
+        self.model_call_failed = false;
     }
 
     /// Whether the current (or most recent) model call reached the provider.

@@ -186,8 +186,13 @@ fn hosted_error_message(kind: HostedErrorKind) -> &'static str {
 
 /// Builds a [`HostedError`] from the raw loop error and whatever partial
 /// [`AgentRun`] the loop accumulated before failing.
-fn hosted_error(error: &TinyAgentsError, run: AgentRun) -> HostedError {
+fn hosted_error(error: &TinyAgentsError, mut run: AgentRun) -> HostedError {
     let kind = classify_hosted_error(error);
+    // The typed outcome mirrors the raw error text; keep its classification
+    // and replace the detail with the fixed, sanitized message.
+    if let Some(outcome) = run.terminal.as_mut() {
+        outcome.message = hosted_error_message(kind).to_string();
+    }
     HostedError {
         kind,
         message: hosted_error_message(kind).to_string(),

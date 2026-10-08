@@ -170,7 +170,8 @@ where
                         }
                     };
                     limit_stop |= loop_state.limit_stop;
-                    limit_kind = loop_state.limit_kind;
+                    // Latch the first kind: a later command must not erase it.
+                    limit_kind = limit_kind.or(loop_state.limit_kind);
                     let Some(target) = command.goto.first() else {
                         break Err(TinyAgentsError::Validation(
                             "GraphLoopDriver: loop node's command carried no route".to_string(),
@@ -255,7 +256,7 @@ where
                     .then(|| ctx.peek_last_limit())
                     .flatten();
                 let mut outcome = TerminalOutcome::from_error(error, site).with_limit_kind(kind);
-                outcome.provider_started |= ctx.provider_started();
+                outcome.provider_started = ctx.provider_started();
                 Some(outcome)
             }
         };
