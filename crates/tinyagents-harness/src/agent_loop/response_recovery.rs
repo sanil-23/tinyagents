@@ -335,7 +335,12 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             messages.pop();
             ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_nudges_used += 1;
-            let repeat_cap = (turn_recovery.truncated_empty_nudges_used > 1 || clock_only_nudge)
+            let retry_was_skipped_for_clock = truncated_retry
+                .as_ref()
+                .is_some_and(|plan| !plan.worth_it());
+            let repeat_cap = (turn_recovery.truncated_empty_nudges_used > 1
+                || clock_only_nudge
+                || retry_was_skipped_for_clock)
                 .then(|| truncated_retry.as_ref().and_then(|plan| plan.nudge_cap()))
                 .flatten();
             if let Some(cap) = repeat_cap {
