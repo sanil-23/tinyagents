@@ -135,6 +135,18 @@ impl TruncatedRetryPlan {
         Some((current / 2).max(TRUNCATED_NUDGE_CAP_FLOOR).min(current))
     }
 
+    /// The nudge cap is the smaller of the halved cap and the cap the clock
+    /// can afford. If the known rate says even the original cap cannot fit,
+    /// there is no affordable nudge cap.
+    pub(super) fn nudge_cap(&self) -> Option<u32> {
+        let halved = self.halved_cap()?;
+        match (self.ms_per_token(), self.remaining, self.affordable_cap()) {
+            (Some(_), Some(_), Some(affordable)) => Some(halved.min(affordable)),
+            (Some(_), Some(_), None) => None,
+            _ => Some(halved),
+        }
+    }
+
     /// A nudged call at the halved cap, at the dead call's rate, fits inside
     /// its share of the remaining clock. Without a clock there is nothing to
     /// spend, so the answer is no: the policy's own nudge count applies.
@@ -142,11 +154,12 @@ impl TruncatedRetryPlan {
         let Some(remaining) = self.remaining else {
             return false;
         };
-        let expected_ms = match (self.ms_per_token(), self.halved_cap()) {
+        let expected_ms = match (self.ms_per_token(), self.nudge_cap()) {
             (Some(rate), Some(cap)) => (rate * cap as f64) as u64,
             _ => self.dead_ms,
         };
-        expected_ms as f64 <= remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE
+        self.nudge_cap().is_some()
+            && expected_ms as f64 <= remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE
     }
 }
 

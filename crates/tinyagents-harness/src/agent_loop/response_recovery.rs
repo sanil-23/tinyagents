@@ -319,20 +319,24 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // model act sooner.
         let clock_allows_another_nudge = truncated_retry
             .as_ref()
-            .is_some_and(|plan| plan.halved_cap().is_some() && plan.another_nudge_fits())
+            .is_some_and(|plan| plan.nudge_cap().is_some() && plan.another_nudge_fits())
             && turn_recovery.truncated_empty_nudges_used < TRUNCATED_CLOCK_NUDGE_LIMIT;
         let clock_only_nudge =
             turn_recovery.truncated_empty_nudges_used >= self.policy.truncated_empty_nudges;
+        let policy_nudge_fits = truncated_retry.as_ref().is_some_and(|plan| {
+            plan.remaining.is_none() || plan.another_nudge_fits()
+        });
         if truncated_empty
             && (turn_recovery.truncated_empty_nudges_used < self.policy.truncated_empty_nudges
                 || clock_allows_another_nudge)
+            && policy_nudge_fits
             && ctx.limits.remaining_model_calls() > 0
         {
             messages.pop();
             ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_nudges_used += 1;
             let repeat_cap = (turn_recovery.truncated_empty_nudges_used > 1 || clock_only_nudge)
-                .then(|| truncated_retry.as_ref().and_then(|plan| plan.halved_cap()))
+                .then(|| truncated_retry.as_ref().and_then(|plan| plan.nudge_cap()))
                 .flatten();
             if let Some(cap) = repeat_cap {
                 turn_recovery.boosted_max_tokens = Some(cap);
