@@ -431,6 +431,7 @@ where
     status.set_last_event(started_record.id);
     status.active_model_call = Some(call_id.clone());
     ctx.active_model_call = Some(call_id.clone());
+    ctx.begin_model_call();
 
     let base = DirectModelBase {
         model: binding.model.as_ref(),

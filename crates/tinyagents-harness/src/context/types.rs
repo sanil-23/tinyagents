@@ -510,6 +510,9 @@ pub struct RunContext<Ctx = ()> {
     /// goes through the agent loop.
     pub active_model_call: Option<CallId>,
     pub(crate) provider_started: bool,
+    /// Whether the *current* model call reached the provider; reset when a
+    /// call begins (see `begin_model_call`).
+    pub(crate) call_provider_started: bool,
     /// Set when a model call returned an error, so the terminal classifier
     /// still knows the failure surfaced inside the provider call after
     /// `active_model_call` was cleared.

@@ -720,6 +720,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // call id the loop uses instead of deriving an uncorrelated one
             // (I-7). Cleared right after the wrap onion returns, below.
             ctx.active_model_call = Some(call_id.clone());
+            ctx.begin_model_call();
             // Captured here (where the call actually starts) so the completed
             // event carries a real start time for duration-aware exporters.
             let model_started_at_ms = crate::ids::now_ms();

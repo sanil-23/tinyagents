@@ -329,6 +329,7 @@ impl<Ctx> RunContext<Ctx> {
             last_limit: std::sync::Mutex::new(None),
             active_model_call: None,
             provider_started: false,
+            call_provider_started: false,
             model_call_failed: false,
             call_streamed: false,
             prefix_epoch: 0,
@@ -838,6 +839,7 @@ impl<Ctx> RunContext<Ctx> {
     /// call of each loop driver immediately before it reaches the provider.
     pub fn mark_provider_started(&mut self) {
         self.provider_started = true;
+        self.call_provider_started = true;
     }
 
     #[doc(hidden)]
@@ -848,6 +850,16 @@ impl<Ctx> RunContext<Ctx> {
     /// Whether a model call surfaced an error (see `model_call_failed`).
     pub fn model_call_failed(&self) -> bool {
         self.model_call_failed
+    }
+
+    /// Marks the start of a model call: clears the per-call provider flag.
+    pub fn begin_model_call(&mut self) {
+        self.call_provider_started = false;
+    }
+
+    /// Whether the current (or most recent) model call reached the provider.
+    pub fn call_provider_started(&self) -> bool {
+        self.call_provider_started
     }
 
     /// Whether any provider call has been dispatched during this run.

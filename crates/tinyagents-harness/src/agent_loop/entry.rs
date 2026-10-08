@@ -476,7 +476,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // the provider was actually dispatched; a wrap middleware that
                 // rejected the call first never reached it.
                 let in_model_call = ctx.active_model_call.is_some() || ctx.model_call_failed();
-                let site = if in_model_call && ctx.provider_started() {
+                let site = if in_model_call && ctx.call_provider_started() {
                     TimeoutPhase::Provider
                 } else if in_model_call {
                     TimeoutPhase::BeforeProvider
