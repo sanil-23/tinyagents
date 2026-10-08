@@ -311,3 +311,16 @@ async fn a_timeout_outcome_set_by_middleware_on_an_ok_return_is_not_completed() 
     assert!(partial.error.is_none());
     assert_eq!(partial.status.status, ExecutionStatus::Failed);
 }
+
+#[tokio::test]
+async fn a_cache_served_run_does_not_claim_the_provider_started() {
+    use crate::cache::InMemoryResponseCache;
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.with_response_cache(Arc::new(InMemoryResponseCache::new()));
+    let input = vec![Message::user("same request")];
+    let first = harness.invoke_default(&(), input.clone()).await.unwrap();
+    assert!(first.terminal.unwrap().provider_started);
+    let second = harness.invoke_default(&(), input).await.unwrap();
+    assert_eq!(second.text(), Some("done".to_string()));
+    assert!(!second.terminal.unwrap().provider_started);
+}
