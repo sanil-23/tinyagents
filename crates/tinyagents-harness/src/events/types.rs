@@ -726,7 +726,10 @@ pub enum AgentEvent {
         /// [`PayloadCapture::tool_io`][crate::runtime::PayloadCapture::tool_io]
         /// is enabled, all others when
         /// [`PayloadCapture::model_io`][crate::runtime::PayloadCapture::model_io]
-        /// is. Empty in the default payload-free mode.
+        /// is. One slot per applied message (`null` for an uncaptured one) so
+        /// slots line up with `first_index..first_index + count`; empty when
+        /// nothing in the batch is captured, including the default payload-free
+        /// mode.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         messages: Vec<serde_json::Value>,
     },

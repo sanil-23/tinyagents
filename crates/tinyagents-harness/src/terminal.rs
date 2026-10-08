@@ -76,7 +76,10 @@ pub enum TerminalClass {
 /// Where in the run a timeout landed.
 ///
 /// Also used as the *site* a failure surfaced at ([`TerminalOutcome::from_error`]):
-/// `provider_started` is `false` exactly for [`TimeoutPhase::BeforeProvider`].
+/// [`TerminalOutcome::from_error`] derives `provider_started` as `false` exactly
+/// for [`TimeoutPhase::BeforeProvider`]; the loop drivers then overwrite it with
+/// the run-wide dispatch history (a later call rejected before dispatch still
+/// reports that an earlier call reached the provider).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]

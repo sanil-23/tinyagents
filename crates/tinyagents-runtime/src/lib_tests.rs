@@ -4247,6 +4247,16 @@ async fn wait_for_outcomes(hook: &OutcomeHook, count: usize) {
     }
 }
 
+/// Waits (bounded) until `count` hook callbacks have been recorded in order.
+async fn wait_for_order(hook: &OutcomeHook, count: usize) {
+    for _ in 0..500 {
+        if hook.order.lock().unwrap().len() >= count {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 fn outcome_hook() -> Arc<OutcomeHook> {
     Arc::new(OutcomeHook {
         outcomes: Mutex::default(),
@@ -4274,6 +4284,7 @@ async fn driver_failures_deliver_their_typed_outcome_before_the_terminal() {
         )
         .await;
     wait_for_outcomes(&hook, 1).await;
+    wait_for_order(&hook, 2).await;
     assert_eq!(hook.outcomes.lock().unwrap().as_slice(), [typed]);
     assert_eq!(
         hook.order.lock().unwrap().as_slice(),
