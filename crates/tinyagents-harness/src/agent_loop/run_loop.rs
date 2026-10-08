@@ -308,6 +308,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
 
             // Fail-closed limit and deadline checks before each model call.
+            ctx.clear_last_limit();
             if ctx.check_deadline().is_err() {
                 ctx.emit(AgentEvent::LimitReached {
                     kind: LimitKind::WallClock,

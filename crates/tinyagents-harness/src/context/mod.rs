@@ -817,6 +817,16 @@ impl<Ctx> RunContext<Ctx> {
         self.events.emit(event)
     }
 
+    /// Forgets the cached limit kind. The loop calls this at each turn's limit
+    /// checks so a kind emitted earlier cannot be attributed to a later,
+    /// unrelated `LimitExceeded` that emitted no event of its own.
+    pub(crate) fn clear_last_limit(&self) {
+        self.last_limit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
     pub(crate) fn take_last_limit(&self) -> Option<crate::events::LimitKind> {
         self.last_limit
             .lock()
