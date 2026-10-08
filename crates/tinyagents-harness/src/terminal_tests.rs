@@ -272,9 +272,7 @@ fn a_call_timeout_before_dispatch_keeps_the_pre_provider_phase() {
 #[test]
 fn a_summarizer_failure_is_classified_from_its_inner_error() {
     let error = TinyAgentsError::SummarizationUsage {
-        error: Box::new(TinyAgentsError::Provider(
-            "HTTP 429 too many requests".into(),
-        )),
+        error: Box::new(TinyAgentsError::Model("HTTP 429 too many requests".into())),
         usage: Default::default(),
     };
     let o = TerminalOutcome::from_error(&error, TimeoutPhase::AfterTurn);
