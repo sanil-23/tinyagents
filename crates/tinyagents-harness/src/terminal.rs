@@ -248,7 +248,12 @@ impl TerminalOutcome {
                 TerminalReason::ProviderFailed(Some(FailoverReason::Timeout)),
                 message,
             )
-            .with_timeout_phase(TimeoutPhase::Provider),
+            .with_timeout_phase(if site == TimeoutPhase::BeforeProvider {
+                // e.g. hosted model resolution timing out before any dispatch
+                TimeoutPhase::BeforeProvider
+            } else {
+                TimeoutPhase::Provider
+            }),
             E::Provider(_)
             | E::Model(_)
             | E::ContextOverflow { .. }

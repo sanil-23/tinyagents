@@ -498,7 +498,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     TerminalOutcome::from_error(&error, site).with_limit_kind(last_limit);
                 // `site` describes this failure; the run may still have reached
                 // the provider on an earlier call.
-                outcome.provider_started = ctx.provider_started();
+                // A failed summarizer already received a provider response, though
+                // summarizer calls bypass the context's dispatch marker.
+                outcome.provider_started = ctx.provider_started()
+                    || matches!(
+                        error_ref,
+                        TinyAgentsError::SummarizationUsage { .. }
+                    );
                 terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,

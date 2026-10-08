@@ -256,7 +256,13 @@ where
                     .then(|| ctx.peek_last_limit())
                     .flatten();
                 let mut outcome = TerminalOutcome::from_error(error, site).with_limit_kind(kind);
-                outcome.provider_started = ctx.provider_started();
+                // A failed summarizer already received a provider response, though
+                // summarizer calls bypass the context's dispatch marker.
+                outcome.provider_started = ctx.provider_started()
+                    || matches!(
+                        error_ref,
+                        TinyAgentsError::SummarizationUsage { .. }
+                    );
                 Some(outcome)
             }
         };
