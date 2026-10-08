@@ -146,6 +146,43 @@ async fn a_call_that_reasons_past_its_bound_with_nothing_visible_is_ended_as_a_d
 }
 
 #[tokio::test]
+async fn the_bound_counts_characters_not_utf8_bytes() {
+    // 240 CJK characters are 720 bytes. At three characters per token that
+    // is 80 tokens, under a 100-token bound; counted in bytes it would be
+    // 240 tokens and the watchdog would end a live call early.
+    let mut items = vec![ModelStreamItem::Started];
+    for _ in 0..4 {
+        items.push(ModelStreamItem::MessageDelta(MessageDelta {
+            text: String::new(),
+            reasoning: "思".repeat(60),
+            tool_call: None,
+        }));
+    }
+    items.push(text_delta("answer"));
+    items.push(ModelStreamItem::Completed(ModelResponse::assistant(
+        "answer",
+    )));
+    let model = Arc::new(ScriptedStreams::new(vec![items]));
+    let harness = harness_with(Arc::clone(&model), ReasoningWatchdog::Tokens(100));
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("watchdog-chars"), ()).with_events(recorder.sink());
+    let run = harness
+        .invoke_streaming_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(run.text(), Some("answer".to_string()));
+    assert_eq!(model.requests().len(), 1);
+    assert!(
+        !recorder.events().iter().any(|e| matches!(
+            e,
+            AgentEvent::ControlApplied { control, .. } if control == "reasoning_watchdog"
+        )),
+        "no watchdog event; got kinds {:?}",
+        recorder.kinds()
+    );
+}
+
+#[tokio::test]
 async fn visible_output_before_the_bound_disarms_the_watchdog() {
     // Text arrives first, then a long think, then the answer: the model is
     // answering, so the call runs to completion.

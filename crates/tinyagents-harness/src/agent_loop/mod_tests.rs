@@ -9608,6 +9608,38 @@ async fn a_dead_calls_reasoning_is_carried_into_the_retry() {
 }
 
 #[tokio::test]
+async fn the_carry_limit_counts_characters_not_utf8_bytes() {
+    // 9,000 CJK characters are 27,000 bytes. The policy's 8,000 is a
+    // character budget: the excerpt keeps about 8,000 characters (and the
+    // marker at the very end), not 8,000 bytes, which would be under 2,700
+    // characters.
+    let reasoning = format!("{}\nSTATE OF PLAY: 推导完成\n", "思".repeat(9_000));
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response_with_reasoning(&reasoning),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-carry-chars").with_max_turn_output_tokens(2048),
+        (),
+    );
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    let retry = model.requests()[1].clone();
+    let last = retry.messages.last().map(|m| m.text()).unwrap_or_default();
+    assert!(last.contains("STATE OF PLAY: 推导完成"), "the tail is kept");
+    let kept = last.chars().filter(|c| *c == '思').count();
+    assert!(
+        (7_800..=8_000).contains(&kept),
+        "about 8,000 characters of reasoning are kept, not 8,000 bytes: {kept}"
+    );
+}
+
+#[tokio::test]
 async fn short_or_absent_reasoning_is_not_carried() {
     let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
         truncated_empty_response_with_reasoning("hmm"),

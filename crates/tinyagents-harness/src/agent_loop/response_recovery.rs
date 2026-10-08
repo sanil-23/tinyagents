@@ -571,16 +571,19 @@ fn dead_call_reasoning_carry(response: &ModelResponse, limit: usize) -> Option<S
         })
         .collect();
     let reasoning = reasoning.trim();
-    if reasoning.len() < MIN_CARRY_CHARS {
+    // Both bounds are in characters, as the policy field is documented, not
+    // in UTF-8 bytes.
+    let total_chars = reasoning.chars().count();
+    if total_chars < MIN_CARRY_CHARS {
         return None;
     }
-    let tail = if reasoning.len() > limit {
-        // Cut on a character boundary, then on a line boundary where one is
-        // near, so the excerpt does not open mid-word.
-        let mut start = reasoning.len() - limit;
-        while !reasoning.is_char_boundary(start) {
-            start += 1;
-        }
+    let tail = if total_chars > limit {
+        // Keep the last `limit` characters, then cut on a line boundary where
+        // one is near, so the excerpt does not open mid-word.
+        let start = reasoning
+            .char_indices()
+            .nth(total_chars - limit)
+            .map_or(0, |(index, _)| index);
         let excerpt = &reasoning[start..];
         match excerpt.find('\n') {
             Some(nl) if nl < 200 => &excerpt[nl + 1..],

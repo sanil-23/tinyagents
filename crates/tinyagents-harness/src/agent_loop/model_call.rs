@@ -1219,6 +1219,10 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // transformed before it reached consumers.
         let mut streamed_text = String::new();
         let mut streamed_reasoning = String::new();
+        // Characters of `streamed_reasoning`, kept as a running count so the
+        // watchdog estimate below is in characters, not UTF-8 bytes, without
+        // walking the whole text on every delta.
+        let mut streamed_reasoning_chars: u64 = 0;
         let mut saw_streamed_content = false;
         let mut transformed_tools = StreamAccumulator::new();
         let mut saw_tool_delta = false;
@@ -1446,6 +1450,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     || !model_delta.reasoning.is_empty();
                 streamed_text.push_str(&model_delta.content);
                 streamed_reasoning.push_str(&model_delta.reasoning);
+                streamed_reasoning_chars += model_delta.reasoning.chars().count() as u64;
                 // Reasoning past the bound with nothing visible yet: end the
                 // call here as the dead call it was going to be, instead of
                 // waiting for the provider to reach the output cap. Dropping
@@ -1457,9 +1462,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     && !saw_tool_delta
                     && message_delta.tool_call.is_none()
                     && model_delta.tool_call.is_none()
-                    && estimated_reasoning_tokens(&streamed_reasoning) > u64::from(bound)
+                    && estimated_reasoning_tokens(streamed_reasoning_chars) > u64::from(bound)
                 {
-                    let estimated = estimated_reasoning_tokens(&streamed_reasoning);
+                    let estimated = estimated_reasoning_tokens(streamed_reasoning_chars);
                     let elapsed_ms = watchdog_started.elapsed().as_millis() as u64;
                     tracing::warn!(
                         target: "tinyagents::agent_loop",
@@ -1968,14 +1973,15 @@ impl<State: Send + Sync, Ctx: Send + Sync> ToolBaseCall<State, Ctx>
     }
 }
 
-/// Reasoning tokens a streamed reasoning text amounts to, estimated at three
-/// characters per token. Measured on deepseek-v4.1-flash, whose reasoning is
+/// Reasoning tokens a streamed reasoning text of `reasoning_chars` characters
+/// (not UTF-8 bytes: a CJK character is three bytes and about one token)
+/// amounts to, estimated at three characters per token. Measured on deepseek-v4.1-flash, whose reasoning is
 /// dense with code, numbers and short tokens, 36k characters were about 13k
 /// tokens (2.7 per token); English prose runs nearer four. Three keeps the
 /// estimate on the low side for this kind of text, so a bound built on it
 /// fires a little late rather than early.
-fn estimated_reasoning_tokens(reasoning: &str) -> u64 {
-    (reasoning.len() as u64) / 3
+fn estimated_reasoning_tokens(reasoning_chars: u64) -> u64 {
+    reasoning_chars / 3
 }
 
 /// The response the reasoning watchdog hands the loop in place of the call it
