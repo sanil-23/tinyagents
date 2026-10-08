@@ -536,14 +536,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         call_id: &CallId,
         response: &ModelResponse,
     ) {
-        if let Some(carry) =
+        if let Some((carry, kept_chars)) =
             dead_call_reasoning_carry(response, self.policy.truncated_empty_carry_reasoning_chars)
         {
             ctx.emit(AgentEvent::ControlApplied {
                 control: "truncated_empty_reasoning_carried".to_string(),
                 detail: format!(
-                    "model call `{call_id}`: {} chars of its interrupted reasoning carried into the transcript",
-                    carry.len()
+                    "model call `{call_id}`: {kept_chars} chars of its interrupted reasoning carried into the transcript"
                 ),
             });
             messages.push(Message::user(carry));
@@ -556,7 +555,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
 /// kept: a derivation's state of play is at its end, and its start is the
 /// part a fresh call re-derives fastest. `None` for a response with no
 /// reasoning, a limit of zero, or reasoning too short to be worth a message.
-fn dead_call_reasoning_carry(response: &ModelResponse, limit: usize) -> Option<String> {
+/// Returns the framed message and the number of reasoning characters it
+/// keeps (the framing excluded).
+fn dead_call_reasoning_carry(response: &ModelResponse, limit: usize) -> Option<(String, usize)> {
     const MIN_CARRY_CHARS: usize = 200;
     if limit == 0 {
         return None;
@@ -592,7 +593,9 @@ fn dead_call_reasoning_carry(response: &ModelResponse, limit: usize) -> Option<S
     } else {
         reasoning
     };
-    Some(format!(
-        "{TRUNCATED_EMPTY_CARRY_PREFIX}[…]\n{tail}{TRUNCATED_EMPTY_CARRY_SUFFIX}"
+    let kept_chars = tail.chars().count();
+    Some((
+        format!("{TRUNCATED_EMPTY_CARRY_PREFIX}[…]\n{tail}{TRUNCATED_EMPTY_CARRY_SUFFIX}"),
+        kept_chars,
     ))
 }

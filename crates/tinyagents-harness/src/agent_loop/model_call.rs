@@ -1438,6 +1438,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 self.middleware
                     .run_on_model_delta(ctx, state, &mut model_delta)
                     .await?;
+                // A tool call middleware added counts as one the call has,
+                // for this delta and every later one.
+                saw_tool_delta |= model_delta.tool_call.is_some();
                 if model_delta.tool_call.is_some() {
                     stream_stall.reset();
                 } else if stream_stall.observe(&model_delta.content) {
