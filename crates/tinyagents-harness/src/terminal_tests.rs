@@ -252,3 +252,14 @@ fn serde_round_trip_and_wire_shape() {
         serde_json::json!({"provider_failed": "rate_limit"})
     );
 }
+
+#[test]
+fn a_call_timeout_before_dispatch_keeps_the_pre_provider_phase() {
+    let error = TinyAgentsError::CallTimeout("resolver".into());
+    let before = TerminalOutcome::from_error(&error, TimeoutPhase::BeforeProvider);
+    assert_eq!(before.timeout_phase, Some(TimeoutPhase::BeforeProvider));
+    assert!(!before.provider_started);
+    let during = TerminalOutcome::from_error(&error, TimeoutPhase::Provider);
+    assert_eq!(during.timeout_phase, Some(TimeoutPhase::Provider));
+    assert!(during.provider_started);
+}
