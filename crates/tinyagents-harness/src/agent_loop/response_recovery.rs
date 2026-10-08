@@ -66,6 +66,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                         "[agent_loop] length-truncated tool calls keep recurring; truncated-tool-call retry budget exhausted"
                     );
                     messages.pop();
+                    ctx.retract_transcript(messages.len());
                     return Err(TinyAgentsError::LimitExceeded(format!(
                         "run `{}` stopped: {} consecutive \
                              retries of a tool call truncated by the output token limit did not \
@@ -145,9 +146,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
     }
 
     /// Recovery for a response with no real tool call that is not yet a usable
-    /// answer. Returns `true` when a retry or re-prompt was scheduled and the
-    /// loop must run another turn; `false` when the response stands and the
-    /// caller goes on to resolve the turn.
+    /// answer. Returns `true` when the loop must continue for recovery or its
+    /// existing limit handling; `false` when the response stands and the caller
+    /// goes on to resolve the turn.
     ///
     /// The checks run in a fixed order: a withheld call, a truncated-empty
     /// retry, a truncated-empty nudge, a non-truncated empty retry, and a
@@ -191,6 +192,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         {
             turn_recovery.withheld_call_nudges_used += 1;
             messages.pop();
+            ctx.retract_transcript(messages.len());
             tracing::info!(
                 target: "tinyagents::agent_loop",
                 run_id = %ctx.run_id(),
@@ -256,6 +258,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // Drop the useless empty assistant row appended above so the
             // retry re-sends the identical transcript.
             messages.pop();
+            ctx.retract_transcript(messages.len());
             let plan = truncated_retry.expect("a truncated-empty reply has a plan");
             turn_recovery.take_truncated_retry(attempt_max_tokens, &plan);
             let record = ctx.emit(AgentEvent::RetryScheduled {
@@ -316,7 +319,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // model act sooner.
         let clock_allows_another_nudge = truncated_retry
             .as_ref()
-            .is_some_and(|plan| plan.another_nudge_fits())
+            .is_some_and(|plan| plan.halved_cap().is_some() && plan.another_nudge_fits())
+            && turn_recovery.truncated_empty_nudges_used > 0
             && turn_recovery.truncated_empty_nudges_used < TRUNCATED_CLOCK_NUDGE_LIMIT;
         if truncated_empty
             && (turn_recovery.truncated_empty_nudges_used < self.policy.truncated_empty_nudges
@@ -324,6 +328,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && ctx.limits.remaining_model_calls() > 0
         {
             messages.pop();
+            ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_nudges_used += 1;
             let repeat_cap = (turn_recovery.truncated_empty_nudges_used > 1)
                 .then(|| truncated_retry.as_ref().and_then(|plan| plan.halved_cap()))
@@ -390,6 +395,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && ctx.limits.remaining_model_calls() > 0
         {
             messages.pop();
+            ctx.retract_transcript(messages.len());
             turn_recovery.empty_response_retries_used += 1;
             tracing::info!(
                 target: "tinyagents::agent_loop",
@@ -435,6 +441,12 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && tools_available_this_turn
             && turn_recovery.dropped_tool_call_nudges_used < self.policy.dropped_tool_call_nudges
         {
+            if ctx.limits.remaining_model_calls() == 0 {
+                // Let the loop apply its limit policy without recording a retry
+                // that cannot run. Returning false would accept this response
+                // as final instead of preserving the limit stop.
+                return true;
+            }
             turn_recovery.dropped_tool_call_nudges_used += 1;
             let nudge = if undecodable_text_call {
                 tracing::info!(

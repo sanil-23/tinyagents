@@ -232,7 +232,9 @@ run is in flight, and the loop drains them only at safe boundaries:
 `RunPolicy::queue_mode` picks how many items a boundary takes:
 `QueueMode::All` (default) applies every pending item; `OneAtATime` applies
 the oldest and leaves the rest for the next boundary. Each application emits
-`AgentEvent::QueuedMessageApplied { lane, count }`. A "natural finish" is
+`AgentEvent::QueuedMessageApplied { lane, count, first_index, messages }` (`messages` follows the
+capture policy per message: `tool` messages under `PayloadCapture::tool_io`,
+all others under `PayloadCapture::model_io`). A "natural finish" is
 the model producing a final answer (including a structured-output finish
 under `EndStrategy::Early`/`Graceful`); a middleware `StopWithFinal` /
 `JumpTo(End)`, a limit stop, a pause, or a deferral is terminal and leaves

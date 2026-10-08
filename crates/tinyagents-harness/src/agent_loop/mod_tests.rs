@@ -1225,8 +1225,16 @@ async fn truncated_empty_retry_stops_at_the_cap_ceiling_and_nudges() {
         "a same-cap retry, two climbs to the ceiling, then the dead call at the ceiling is nudged, not retried"
     );
     let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
-    assert_eq!(sent, vec![Some(2048), Some(2048), Some(4096), Some(8192), Some(8192)]);
-    let last = model.requests().last().expect("five requests").messages.clone();
+    assert_eq!(
+        sent,
+        vec![Some(2048), Some(2048), Some(4096), Some(8192), Some(8192)]
+    );
+    let last = model
+        .requests()
+        .last()
+        .expect("five requests")
+        .messages
+        .clone();
     assert_eq!(
         last.last().map(|m| m.text()),
         Some(super::run_loop::TRUNCATED_EMPTY_ANSWER_NUDGE.to_string()),
@@ -1244,7 +1252,11 @@ async fn truncated_empty_retry_stops_at_the_cap_ceiling_and_nudges() {
             _ => None,
         })
         .collect();
-    assert_eq!(skipped.len(), 1, "exactly one skip, for the dead call at the ceiling");
+    assert_eq!(
+        skipped.len(),
+        1,
+        "exactly one skip, for the dead call at the ceiling"
+    );
     assert!(
         skipped[0].contains("already at its ceiling (8192)"),
         "the skip names the cap: {}",
@@ -1374,10 +1386,22 @@ async fn truncated_empty_nudges_repeat_while_the_clock_allows_with_a_halving_cap
     let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
     assert_eq!(
         sent,
-        vec![Some(2048), Some(2048), Some(4096), Some(4096), Some(2048), Some(2048)],
+        vec![
+            Some(2048),
+            Some(2048),
+            Some(4096),
+            Some(4096),
+            Some(2048),
+            Some(2048)
+        ],
         "a same-cap retry, one climb, then nudges at the held cap, half of it, and the floor"
     );
-    let last = model.requests().last().expect("six requests").messages.clone();
+    let last = model
+        .requests()
+        .last()
+        .expect("six requests")
+        .messages
+        .clone();
     let text = last.last().map(|m| m.text()).unwrap_or_default();
     assert!(
         text.contains("cut off again") && text.contains("2048 tokens"),
@@ -1406,7 +1430,11 @@ async fn truncated_empty_nudges_stop_at_their_limit_even_with_clock_left() {
         .invoke_in_context(&(), ctx, vec![Message::user("hi")])
         .await
         .expect("a blank is surfaced, not an error, by default");
-    assert_eq!(run.model_calls, 1 + 2 + 6, "first attempt, two retries, six nudges");
+    assert_eq!(
+        run.model_calls,
+        1 + 2 + 6,
+        "first attempt, two retries, six nudges"
+    );
     assert_eq!(run.text().unwrap_or_default().trim(), "");
 }
 
@@ -1426,7 +1454,11 @@ async fn truncated_empty_nudges_do_not_repeat_without_a_clock() {
         .invoke_in_context(&(), ctx, vec![Message::user("hi")])
         .await
         .expect("a blank is surfaced by default");
-    assert_eq!(run.model_calls, 1 + 2 + 1, "first attempt, two retries, one nudge");
+    assert_eq!(
+        run.model_calls,
+        1 + 2 + 1,
+        "first attempt, two retries, one nudge"
+    );
 }
 
 #[tokio::test]
@@ -9185,4 +9217,46 @@ async fn graceful_mixed_turn_without_truncation_still_finishes_in_one_call() {
         "first"
     );
     assert_eq!(*tool.calls.lock().unwrap(), 1);
+}
+
+/// A fold of a tool-set change into the leading system message rewrites the
+/// transcript in place; the lifecycle events report it so a mirror stays exact.
+#[tokio::test]
+async fn dynamic_toolset_fold_is_reported_as_a_transcript_rewrite() {
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model(
+        "mock",
+        Arc::new(MockModel::with_responses(vec![
+            tool_call_response("call-1", "search", json!({"q": "x"})),
+            text_response("done", 4, 2),
+        ])),
+    );
+    let search: Arc<dyn Tool> = Arc::new(FakeTool::new("search", "search-output"));
+    let browse: Arc<dyn Tool> = Arc::new(FakeTool::new("browse", "browse-output"));
+    let toolset = Arc::new(DynamicToolSet {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        search: search.clone(),
+        browse,
+    });
+    harness.with_toolset(toolset.clone());
+    harness.register_tool_dispatch(Arc::new(crate::tool::toolset::ToolSetDispatchBridge::new(
+        toolset, search,
+    )));
+    let recorder = crate::testkit::EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("fold-rewrite"), ()).with_events(recorder.sink());
+    let seed = vec![Message::system("baseline persona"), Message::user("go")];
+
+    let run = harness
+        .invoke_in_context(&(), ctx, seed.clone())
+        .await
+        .expect("run succeeds");
+
+    let events = recorder.events();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::TranscriptRewritten { reason, .. } if reason == "tool_change")),
+        "the in-place fold is announced"
+    );
+    super::lifecycle_test::assert_mirrors(&events, &seed, &run.messages);
 }

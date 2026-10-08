@@ -509,6 +509,7 @@ fn run_span_carries_run_error_and_window() {
                     AgentEvent::RunFailed {
                         run_id: RunId::new("run-1"),
                         error: "boom".to_string(),
+                        outcome: None,
                     },
                 ),
             ],

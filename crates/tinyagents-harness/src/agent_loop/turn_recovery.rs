@@ -107,7 +107,8 @@ impl TruncatedRetryPlan {
         } else {
             format!(
                 "a retry at {} tokens would run about {}s at the rate of the call that just died, more than half the {}s left",
-                self.next.map_or("the same cap".to_string(), |c| c.to_string()),
+                self.next
+                    .map_or("the same cap".to_string(), |c| c.to_string()),
                 self.expected_ms() / 1000,
                 self.remaining.map_or(0, |d| d.as_secs())
             )
@@ -122,10 +123,9 @@ impl TruncatedRetryPlan {
         let current = self.current?;
         let rate = self.ms_per_token()?;
         let remaining = self.remaining?;
-        let affordable =
-            (remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE / rate) as u64;
+        let affordable = (remaining.as_millis() as f64 * TRUNCATED_RETRY_CLOCK_SHARE / rate) as u64;
         let floor = self.base.unwrap_or(current).min(current).max(1);
-        Some((affordable.min(u64::from(current)) as u32).max(floor))
+        (affordable >= u64::from(floor)).then_some(affordable.min(u64::from(current)) as u32)
     }
 
     /// The cap the next nudged call runs under: half the current one, never

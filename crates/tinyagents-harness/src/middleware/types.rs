@@ -157,6 +157,14 @@ pub struct AgentRun {
     /// (and re-summarizing) everything the compaction already folded. Set by
     /// [`ContextCompressionMiddleware`]'s `after_agent` hook.
     pub compacted_history: Option<Vec<tinyinference_llm::message::Message>>,
+    /// How the run ended, structured (see [`crate::terminal`]). Set by the
+    /// agent loop on every exit path it controls — completion, a
+    /// `StopWithPartial` cap, a pause, a deferral — and by the driver on
+    /// failure, so a host reading a partial run (for example from
+    /// [`PartialRunOutcome`][crate::agent_loop::PartialRunOutcome]) needs no
+    /// string parsing. `None` only while the run is still in flight, or when a
+    /// wrapping middleware replaced the loop.
+    pub terminal: Option<crate::terminal::TerminalOutcome>,
 }
 
 /// Host-only metadata one tool call returned, as recorded on

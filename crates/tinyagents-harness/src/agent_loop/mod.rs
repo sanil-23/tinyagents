@@ -109,6 +109,7 @@ use crate::middleware::{
 use crate::model_registry::{ResolvedModelBinding, model_eligible};
 use crate::runtime::{AgentHarness, EndStrategy, InvalidArgsPolicy, UnknownToolPolicy};
 use crate::structured::{StructuredExtractor, StructuredStrategy};
+use crate::terminal::{TerminalClass, TerminalOutcome, TimeoutPhase};
 use futures::StreamExt;
 use serde_json::Value;
 use tinyinference_llm::message::{Message, MessageDelta};
@@ -122,6 +123,7 @@ mod dialect;
 mod entry;
 mod handoff_transform;
 mod host_budget;
+mod lifecycle;
 mod mixed_turn;
 mod model_call;
 mod model_switch;
@@ -140,12 +142,16 @@ mod turn_control;
 mod turn_recovery;
 mod unknown_tool;
 
+pub(crate) use lifecycle::TurnTracker;
 pub use stream::AgentStreamItem;
 pub(crate) use stream::{StreamRunner, invoke_stream_with_runner};
 
 #[cfg(test)]
 #[path = "deferred_tests.rs"]
 mod deferred_test;
+#[cfg(test)]
+#[path = "lifecycle_tests.rs"]
+mod lifecycle_test;
 #[cfg(test)]
 #[path = "model_profile_preview_tests.rs"]
 mod model_profile_preview_test;
@@ -165,6 +171,9 @@ mod run_queue_test;
 #[cfg(test)]
 #[path = "stream_idle_timeout_tests.rs"]
 mod stream_idle_timeout_test;
+#[cfg(test)]
+#[path = "terminal_outcome_tests.rs"]
+mod terminal_outcome_test;
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod test;

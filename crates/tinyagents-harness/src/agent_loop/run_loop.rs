@@ -35,9 +35,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         // A mid-turn tool failure used to drop everything accumulated so far,
         // leaving the caller unable to inspect, repair, or resume from the
         // partial conversation.
+        ctx.reset_turn_tracker(messages.len());
         let outcome = self
             .run_loop_body(state, ctx, run, status, &mut messages, streaming)
             .await;
+        // Announce whatever the final turn appended and close it, on every
+        // exit path, before the transcript moves onto the run.
+        ctx.close_turn(self.policy.capture, &messages);
         run.messages = std::mem::take(&mut messages);
         // A4: the `Collect` lane is delivered on the run, never on the
         // transcript, and on every exit path — a host that pushed
@@ -60,8 +64,27 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
         };
 
+        // One typed answer to "how did the loop end", derived once here so the
+        // event, `run.terminal` and the legacy fields cannot disagree.
+        let mut terminal = TerminalOutcome::from_loop_exit(&exit, ctx.provider_started());
+        // A repeat / no-progress guard halts by pausing; its marker says so.
+        if matches!(exit, LoopExit::Paused(_))
+            && let Some(summary) = ctx.halted_by_guard.take()
+        {
+            terminal =
+                TerminalOutcome::halted(summary).with_provider_started(ctx.provider_started());
+        }
+        run.terminal = Some(terminal.clone());
+
         status.mark_running(HarnessPhase::Middleware);
-        self.middleware.run_after_agent(ctx, state, run).await?;
+        let after_agent = self.middleware.run_after_agent(ctx, state, run).await;
+        // `after_agent` may post-process `run.messages`; announce anything it
+        // appended (even if it then failed) so a mirror built from lifecycle
+        // events matches the returned transcript.
+        ctx.flush_transcript(self.policy.capture, &run.messages);
+        after_agent?;
+        // The hook may have replaced the outcome; the event reports the final one.
+        let terminal = run.terminal.clone().unwrap_or(terminal);
 
         match exit {
             LoopExit::Finished | LoopExit::LimitStop(_) => {
@@ -76,6 +99,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 }
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),
+                    outcome: Some(terminal),
                 });
                 status.set_last_event(record.id);
             }
@@ -291,6 +315,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
 
             // Fail-closed limit and deadline checks before each model call.
+            ctx.clear_last_limit();
             if ctx.check_deadline().is_err() {
                 ctx.emit(AgentEvent::LimitReached {
                     kind: LimitKind::WallClock,
@@ -380,10 +405,16 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // transcript patch, so it is part of *this* turn's request; then
             // promote tools a successful `tool_search` returned and assemble
             // the turn's wire list.
-            surface
+            // Announce pending appends first so a rewrite is reported against
+            // the transcript it actually rewrote.
+            ctx.flush_transcript(self.policy.capture, messages);
+            let rewrote = surface
                 .declare_toolset_changes(self, ctx, messages, &host_allows, patch_profile.as_ref())
                 .await?;
-            surface.promote_discovered(messages, patch_profile.as_ref());
+            let rewrote = surface.promote_discovered(messages, patch_profile.as_ref()) || rewrote;
+            if rewrote {
+                ctx.rebase_transcript(messages.len(), "tool_change");
+            }
             surface.assemble_turn_schemas();
 
             // Build the request from the working transcript, tool schemas, and
@@ -693,9 +724,11 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // call id the loop uses instead of deriving an uncorrelated one
             // (I-7). Cleared right after the wrap onion returns, below.
             ctx.active_model_call = Some(call_id.clone());
+            ctx.begin_model_call();
             // Captured here (where the call actually starts) so the completed
             // event carries a real start time for duration-aware exporters.
             let model_started_at_ms = crate::ids::now_ms();
+            ctx.start_turn(self.policy.capture, messages);
             let record = ctx.emit(AgentEvent::ModelStarted {
                 call_id: call_id.clone(),
                 model: model_name.clone(),
@@ -759,6 +792,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             {
                 Ok(outcome) => outcome.into_response_with_control(),
                 Err(error) => {
+                    status.active_model_call = None;
+                    ctx.active_model_call = None;
+                    ctx.mark_model_call_failed();
                     // A response discarded before a retry was billed even if
                     // the replacement call fails. Do not leave that usage in
                     // the context when the `?` below would skip normal
@@ -812,6 +848,10 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 super::dialect::withhold_text_calls(&mut response, &call_id, &recovery.dropped);
             }
 
+            // The provider call has returned: a failure from here on (response
+            // accounting, `after_model`) is after-turn, not an in-flight call.
+            ctx.active_model_call = None;
+
             // Account for the completed provider response before fallible
             // response middleware (see `model_turn.rs`). A middleware rejection
             // must not erase usage already incurred, and the host admission
@@ -837,7 +877,6 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 .middleware
                 .run_after_model(ctx, state, &mut response)
                 .await;
-            ctx.active_model_call = None;
             after_model?;
             let captured_output = self
                 .policy
@@ -854,6 +893,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             status.set_last_event(record.id);
 
             messages.push(Message::Assistant(response.message.clone()));
+            ctx.flush_transcript(self.policy.capture, messages);
 
             // Safe checkpoint: honor any control outcome a middleware requested
             // during this turn (for example an early-exit tool or a budget stop
@@ -958,9 +998,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
 
             if real_tool_calls.is_empty() {
-                // Withheld-call, truncated-empty, empty-response and dropped-call
-                // recovery: when one schedules a retry or re-prompt, run another
-                // turn (see `response_recovery.rs` for the order of the checks).
+                // Resolve unusable responses before finishing the turn. Recovery
+                // may continue to the loop's existing limit check without
+                // scheduling a retry when no model-call budget remains.
                 if self.recover_unusable_response(
                     ctx,
                     run,
@@ -1062,9 +1102,11 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     && response.text().trim().is_empty()
                 {
                     messages.pop();
+                    ctx.retract_transcript(messages.len());
                     return Err(TinyAgentsError::EmptyResponse);
                 }
                 run.final_response = Some(response);
+                ctx.close_turn(self.policy.capture, messages);
                 // Natural finish (A4): queued steering or a follow-up turns
                 // "done" into "one more turn" instead of returning.
                 if self
@@ -1110,6 +1152,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             {
                 return Ok(exit);
             }
+
+            ctx.close_turn(self.policy.capture, messages);
 
             // Turn boundary (A4): every tool result of this batch is on the
             // transcript, so queued steering can be applied now — never

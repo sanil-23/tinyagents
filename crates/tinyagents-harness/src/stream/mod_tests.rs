@@ -321,6 +321,7 @@ mod project {
             AgentEvent::MemorySaved,
             AgentEvent::RunCompleted {
                 run_id: RunId::new("r1"),
+                outcome: None,
             },
         ] {
             let mode = projected_mode(&event);
