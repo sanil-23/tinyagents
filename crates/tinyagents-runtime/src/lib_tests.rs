@@ -4369,3 +4369,89 @@ fn tool_snapshot_retaining_keeps_matching_declarations_and_exactness() {
     assert!(narrowed.is_exact(), "a one-off snapshot stays one-off");
     assert_eq!(snapshot.specs().len(), 2, "the source is untouched");
 }
+
+struct SlowOutcomeHook {
+    started: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+    terminal: Arc<tokio::sync::Notify>,
+    terminals: Mutex<Vec<SessionTerminal>>,
+}
+
+#[async_trait]
+impl SessionHooks for SlowOutcomeHook {
+    async fn before_turn(
+        &self,
+        _: &mut SessionTurnRequest,
+        _: &mut TurnOptions,
+        _: SessionStateView<'_>,
+    ) -> Result<TurnPreparation, RuntimeError> {
+        Err(RuntimeError::Cancelled)
+    }
+
+    async fn before_commit(
+        &self,
+        _: &SessionTurnOutcome,
+        _: &TranscriptTurnOptions,
+    ) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+
+    async fn after_commit(&self, _: CommitReceipt) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+
+    async fn on_terminal_outcome(
+        &self,
+        _: tinyagents_harness::terminal::TerminalOutcome,
+    ) -> Result<(), RuntimeError> {
+        self.started.notify_waiters();
+        self.release.notified().await;
+        Ok(())
+    }
+
+    async fn on_terminal(&self, terminal: SessionTerminal) -> Result<(), RuntimeError> {
+        self.terminals.lock().unwrap().push(terminal);
+        self.terminal.notify_waiters();
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn dropping_the_turn_while_the_outcome_hook_is_pending_still_delivers_on_terminal() {
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let terminal = Arc::new(tokio::sync::Notify::new());
+    let hook = Arc::new(SlowOutcomeHook {
+        started: started.clone(),
+        release: release.clone(),
+        terminal: terminal.clone(),
+        terminals: Mutex::new(Vec::new()),
+    });
+    let (locator, _history) = locator(None);
+    let mut session = SessionBuilder::new(Arc::new(Driver::new(vec![Ok(outcome(vec![
+        Message::assistant("never"),
+    ]))])))
+    .codec(Arc::new(Codec::default()))
+    .transcript(locator, "agent", meta())
+    .hooks(hook.clone())
+    .build()
+    .unwrap();
+    let observed_terminal = terminal.notified();
+    let observed_start = started.notified();
+    let turn = tokio::spawn(async move {
+        session
+            .turn(
+                SessionTurnRequest::new(Message::user("x")),
+                TurnOptions::default(),
+            )
+            .await
+    });
+    observed_start.await;
+    turn.abort();
+    let _ = turn.await;
+    release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(5), observed_terminal)
+        .await
+        .expect("on_terminal must still be delivered");
+    assert_eq!(hook.terminals.lock().unwrap().len(), 1);
+}

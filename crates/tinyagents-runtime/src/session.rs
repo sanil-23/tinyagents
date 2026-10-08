@@ -1127,8 +1127,20 @@ impl<C: Clone + Send + Sync + 'static> TerminalGuard<C> {
         let Some((terminal, outcome)) = self.take_pending() else {
             return Ok(());
         };
-        let _ = self.hooks.on_terminal_outcome(outcome).await;
-        self.hooks.on_terminal(terminal).await
+        // The terminal is already removed from the guard, so `Drop` can no
+        // longer deliver it. Run the hooks on their own task: if the caller's
+        // future is dropped while a hook is pending, the remaining hooks still
+        // run exactly once.
+        let hooks = self.hooks.clone();
+        let task = tokio::spawn(async move {
+            let _ = hooks.on_terminal_outcome(outcome).await;
+            hooks.on_terminal(terminal).await
+        });
+        match task.await {
+            Ok(result) => result,
+            Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+            Err(_) => Ok(()),
+        }
     }
 }
 
