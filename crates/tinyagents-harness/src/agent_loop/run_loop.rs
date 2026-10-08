@@ -1509,6 +1509,15 @@ pub(super) const TRUNCATED_EMPTY_REASONING_OFF_TOOL_NOTE: &str = "Reasoning is s
 pub(super) const TRUNCATED_EMPTY_REASONING_OFF_ANSWER_NOTE: &str = "Reasoning is switched off \
     for your next call(s): answer directly from what you already have, in a few sentences.";
 
+/// Frames a dead call's interrupted reasoning for the transcript (see
+/// [`crate::runtime::RunPolicy::truncated_empty_carry_reasoning_chars`]).
+pub(super) const TRUNCATED_EMPTY_CARRY_PREFIX: &str = "Your previous reply ran out of reasoning \
+    budget before it acted. This is where your working-out had got to, so you do not start \
+    over:\n\n";
+pub(super) const TRUNCATED_EMPTY_CARRY_SUFFIX: &str = "\n\nContinue from this point. Do not \
+    re-derive it in your head: turn what you have into code or a check in the workspace now, \
+    run it, and go on from the result.";
+
 /// The re-prompt sent when a text-dialect tool-call block could not be
 /// decoded: no tool ran, and the model should know why rather than assume
 /// its call went through.

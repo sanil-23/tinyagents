@@ -9542,3 +9542,143 @@ async fn a_repeat_note_hands_reasoning_back_before_the_hold_off_is_spent() {
         recorder.kinds()
     );
 }
+
+/// A dead call that carries the reasoning it died in, as a provider's
+/// length-truncated streamed response does.
+fn truncated_empty_response_with_reasoning(reasoning: &str) -> ModelResponse {
+    let mut response = truncated_empty_response(2048);
+    response.message.content = vec![ContentBlock::Thinking {
+        text: reasoning.to_string(),
+        signature: None,
+    }];
+    response
+}
+
+#[tokio::test]
+async fn a_dead_calls_reasoning_is_carried_into_the_retry() {
+    // The derivation the call died in is handed back as the model's own
+    // interrupted notes, tail first, with the instruction to continue in
+    // code; the retry request carries it as its last message.
+    let reasoning = format!(
+        "{}\nSTATE OF PLAY: encoder mirrors the decoder's split\n",
+        "x".repeat(20_000)
+    );
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response_with_reasoning(&reasoning),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    let recorder = crate::testkit::EventRecorder::new();
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-carry").with_max_turn_output_tokens(2048),
+        (),
+    )
+    .with_events(recorder.sink());
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    let retry = model.requests()[1].clone();
+    let last = retry.messages.last().map(|m| m.text()).unwrap_or_default();
+    assert!(
+        last.starts_with(super::run_loop::TRUNCATED_EMPTY_CARRY_PREFIX),
+        "the carry-over is the retry's last message: {last:.120}"
+    );
+    assert!(
+        last.contains("STATE OF PLAY"),
+        "the tail of the reasoning is kept"
+    );
+    assert!(last.contains("Continue from this point"));
+    assert!(
+        last.len() < 8_000 + 600,
+        "the excerpt is bounded by the policy: {} chars",
+        last.len()
+    );
+    assert!(
+        recorder.events().iter().any(|e| matches!(
+            e,
+            AgentEvent::ControlApplied { control, .. }
+                if control == "truncated_empty_reasoning_carried"
+        )),
+        "the carry is observable; got kinds {:?}",
+        recorder.kinds()
+    );
+}
+
+#[tokio::test]
+async fn short_or_absent_reasoning_is_not_carried() {
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response_with_reasoning("hmm"),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-no-carry").with_max_turn_output_tokens(2048),
+        (),
+    );
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    let retry = model.requests()[1].clone();
+    assert_eq!(
+        retry.messages.len(),
+        1,
+        "no carry-over message for three characters of reasoning"
+    );
+}
+
+#[tokio::test]
+async fn the_carry_over_can_be_switched_off() {
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response_with_reasoning(&"y".repeat(5_000)),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    harness.with_policy(RunPolicy {
+        truncated_empty_carry_reasoning_chars: 0,
+        ..RunPolicy::default()
+    });
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-carry-off").with_max_turn_output_tokens(2048),
+        (),
+    );
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(model.requests()[1].messages.len(), 1);
+}
+
+#[tokio::test]
+async fn the_nudge_after_spent_retries_carries_the_reasoning_too() {
+    // With no retry left, the nudged call still gets the interrupted
+    // working-out, ahead of the nudge itself.
+    let model = Arc::new(crate::testkit::ScriptedModel::new(vec![
+        truncated_empty_response_with_reasoning(&"z".repeat(1_000)),
+        text_response("recovered", 4, 3),
+    ]));
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model("mock", Arc::clone(&model) as _);
+    harness.with_policy(RunPolicy {
+        truncated_empty_retries: 0,
+        truncated_empty_nudges: 1,
+        ..RunPolicy::default()
+    });
+    let ctx = RunContext::new(
+        RunConfig::new("truncated-carry-nudge").with_max_turn_output_tokens(2048),
+        (),
+    );
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    let messages = model.requests()[1].messages.clone();
+    assert_eq!(messages.len(), 3, "the seed, the carry, then the nudge");
+    assert!(messages[1].text().contains("Continue from this point"));
+    assert!(messages[2].text().contains("ran out of output tokens"));
+}

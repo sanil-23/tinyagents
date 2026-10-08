@@ -193,6 +193,16 @@ the recovery above runs after a fraction of the wait
 (`AgentEvent::ControlApplied`, `reasoning_watchdog`). Visible text or a
 tool-call fragment disarms it; unary calls are not bounded.
 
+The reasoning a call dies in is usually real work (a correct derivation, cut
+off), and every retry used to begin it again from nothing. The tail of that
+reasoning (`RunPolicy::truncated_empty_carry_reasoning_chars`, default 8,000
+characters, `0` carries nothing) rides into the transcript as a user message
+ahead of the retry or nudged call, framed as the model's own interrupted notes
+with the instruction to continue from there in code rather than re-derive
+(`AgentEvent::ControlApplied`, `truncated_empty_reasoning_carried`). The
+watchdog's synthetic dead response keeps the reasoning that streamed, so a call
+it ends is carried the same way as one the cap ended.
+
 A provider can also end a stream normally after emitting only reasoning, with
 no visible text or tool call. Hosts may set
 `RunPolicy::empty_response_retries` to retry that non-truncated blank result;

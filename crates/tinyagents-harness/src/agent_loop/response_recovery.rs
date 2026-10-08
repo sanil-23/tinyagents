@@ -12,10 +12,10 @@
 //!    empty reply, a dropped or undecodable call): re-issue or re-prompt.
 
 use super::run_loop::{
-    DROPPED_TOOL_CALL_NUDGE, TRUNCATED_EMPTY_ANSWER_NUDGE,
-    TRUNCATED_EMPTY_REASONING_OFF_ANSWER_NOTE, TRUNCATED_EMPTY_REASONING_OFF_TOOL_NOTE,
-    TRUNCATED_EMPTY_TOOL_NUDGE, UNDECODABLE_TOOL_CALL_NUDGE, WITHHELD_TOOL_CALL_NUDGE,
-    truncated_call_positions,
+    DROPPED_TOOL_CALL_NUDGE, TRUNCATED_EMPTY_ANSWER_NUDGE, TRUNCATED_EMPTY_CARRY_PREFIX,
+    TRUNCATED_EMPTY_CARRY_SUFFIX, TRUNCATED_EMPTY_REASONING_OFF_ANSWER_NOTE,
+    TRUNCATED_EMPTY_REASONING_OFF_TOOL_NOTE, TRUNCATED_EMPTY_TOOL_NUDGE,
+    UNDECODABLE_TOOL_CALL_NUDGE, WITHHELD_TOOL_CALL_NUDGE, truncated_call_positions,
 };
 use super::turn_recovery::TRUNCATED_CLOCK_NUDGE_LIMIT;
 use super::*;
@@ -279,9 +279,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             && truncated_retry.as_ref().is_some_and(|plan| plan.worth_it())
         {
             // Drop the useless empty assistant row appended above so the
-            // retry re-sends the identical transcript.
+            // retry re-sends the identical transcript, plus the dead call's
+            // own working-out where it had any: that reasoning was real
+            // progress (a correct derivation, cut off), and without it every
+            // retry starts the same derivation over.
             messages.pop();
             ctx.retract_transcript(messages.len());
+            self.carry_dead_call_reasoning(ctx, messages, call_id, response);
             let plan = truncated_retry.expect("a truncated-empty reply has a plan");
             turn_recovery.take_truncated_retry(attempt_max_tokens, &plan);
             let record = ctx.emit(AgentEvent::RetryScheduled {
@@ -357,6 +361,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         {
             messages.pop();
             ctx.retract_transcript(messages.len());
+            self.carry_dead_call_reasoning(ctx, messages, call_id, response);
             turn_recovery.truncated_empty_nudges_used += 1;
             let retry_was_skipped_for_clock = truncated_retry
                 .as_ref()
@@ -520,4 +525,71 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
 
         false
     }
+
+    /// Appends the dead call's interrupted reasoning to the transcript as a
+    /// user message ahead of the retry or nudged call (see
+    /// [`dead_call_reasoning_carry`]), announcing it when it does.
+    fn carry_dead_call_reasoning(
+        &self,
+        ctx: &mut RunContext<Ctx>,
+        messages: &mut Vec<Message>,
+        call_id: &CallId,
+        response: &ModelResponse,
+    ) {
+        if let Some(carry) =
+            dead_call_reasoning_carry(response, self.policy.truncated_empty_carry_reasoning_chars)
+        {
+            ctx.emit(AgentEvent::ControlApplied {
+                control: "truncated_empty_reasoning_carried".to_string(),
+                detail: format!(
+                    "model call `{call_id}`: {} chars of its interrupted reasoning carried into the transcript",
+                    carry.len()
+                ),
+            });
+            messages.push(Message::user(carry));
+        }
+    }
+}
+
+/// The dead call's reasoning, framed for the transcript, when the response
+/// carries any and the policy keeps it. The *last* `limit` characters are
+/// kept: a derivation's state of play is at its end, and its start is the
+/// part a fresh call re-derives fastest. `None` for a response with no
+/// reasoning, a limit of zero, or reasoning too short to be worth a message.
+fn dead_call_reasoning_carry(response: &ModelResponse, limit: usize) -> Option<String> {
+    const MIN_CARRY_CHARS: usize = 200;
+    if limit == 0 {
+        return None;
+    }
+    let reasoning: String = response
+        .message
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            tinyinference_llm::message::ContentBlock::Thinking { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    let reasoning = reasoning.trim();
+    if reasoning.len() < MIN_CARRY_CHARS {
+        return None;
+    }
+    let tail = if reasoning.len() > limit {
+        // Cut on a character boundary, then on a line boundary where one is
+        // near, so the excerpt does not open mid-word.
+        let mut start = reasoning.len() - limit;
+        while !reasoning.is_char_boundary(start) {
+            start += 1;
+        }
+        let excerpt = &reasoning[start..];
+        match excerpt.find('\n') {
+            Some(nl) if nl < 200 => &excerpt[nl + 1..],
+            _ => excerpt,
+        }
+    } else {
+        reasoning
+    };
+    Some(format!(
+        "{TRUNCATED_EMPTY_CARRY_PREFIX}[…]\n{tail}{TRUNCATED_EMPTY_CARRY_SUFFIX}"
+    ))
 }

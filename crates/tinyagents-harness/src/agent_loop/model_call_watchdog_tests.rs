@@ -234,3 +234,27 @@ async fn the_watchdog_can_be_switched_off() {
     assert_eq!(run.text(), Some("late answer".to_string()));
     assert_eq!(model.requests().len(), 1);
 }
+
+#[tokio::test]
+async fn the_watchdog_hands_the_interrupted_reasoning_to_the_retry() {
+    let model = Arc::new(ScriptedStreams::new(vec![
+        reasoning_then_text(4_000, "late answer"),
+        reasoning_then_text(0, "recovered"),
+    ]));
+    let harness = harness_with(Arc::clone(&model), ReasoningWatchdog::Tokens(200));
+    let ctx = RunContext::new(RunConfig::new("watchdog-carry"), ());
+    let run = harness
+        .invoke_streaming_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .expect("the run finishes");
+    assert_eq!(run.text(), Some("recovered".to_string()));
+    let last = model.requests()[1]
+        .messages
+        .last()
+        .map(|m| m.text())
+        .unwrap_or_default();
+    assert!(
+        last.contains("Continue from this point") && last.contains("xxxxxxxx"),
+        "the streamed reasoning the watchdog cut off rides into the retry: {last:.100}"
+    );
+}

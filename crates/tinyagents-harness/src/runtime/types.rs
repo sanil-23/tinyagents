@@ -394,6 +394,20 @@ pub struct RunPolicy {
     /// Defaults to [`ReasoningWatchdog::RequestBudget`]: enforce the budget the
     /// request carries, do nothing for a request without one.
     pub reasoning_watchdog: ReasoningWatchdog,
+    /// How much of a dead call's interrupted reasoning (its last characters)
+    /// is carried into the transcript, as a user message, ahead of the retry
+    /// or nudged call that follows it. `0` carries nothing.
+    ///
+    /// The reasoning a call dies in is usually real work: read back, one
+    /// dead call on a compression task was a correct derivation of the
+    /// decoder's arithmetic coder, cut off at the cap, and every retry began
+    /// the same derivation again from nothing. Carrying the tail of it, with
+    /// a note to continue from there in code rather than re-derive, makes the
+    /// deaths cumulative instead of wasted. The tail is kept because a
+    /// derivation's state of play is at its end.
+    ///
+    /// Defaults to 8,000 characters, about 2,500 tokens per death.
+    pub truncated_empty_carry_reasoning_chars: usize,
     /// Automatic retries for a completion with no visible text, tool calls, or
     /// structured output when the provider did not report length truncation.
     /// Reasoning-only `stop` responses are one example: the model spent tokens
@@ -711,6 +725,7 @@ impl Default for RunPolicy {
             // call goes out without it.
             truncated_empty_reasoning_fallback: true,
             reasoning_watchdog: ReasoningWatchdog::RequestBudget,
+            truncated_empty_carry_reasoning_chars: 8_000,
             empty_response_retries: 0,
             reject_truncated_tool_calls: true,
             truncated_tool_call_retries: 2,

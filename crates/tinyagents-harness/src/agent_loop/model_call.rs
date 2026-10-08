@@ -1476,7 +1476,10 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                              was ended and is treated as a dead call"
                         ),
                     });
-                    return Ok(watchdog_dead_response(estimated));
+                    return Ok(watchdog_dead_response(
+                        estimated,
+                        std::mem::take(&mut streamed_reasoning),
+                    ));
                 }
                 let forwarded_delta = MessageDelta {
                     text: model_delta.content.clone(),
@@ -1975,14 +1978,24 @@ fn estimated_reasoning_tokens(reasoning: &str) -> u64 {
 
 /// The response the reasoning watchdog hands the loop in place of the call it
 /// ended: the shape a call truncated at its output cap has (`finish_reason =
-/// length`, no content, no tool call), with the estimated reasoning as its
-/// output usage so the recovery can judge the call's rate.
-fn watchdog_dead_response(estimated_reasoning_tokens: u64) -> ModelResponse {
+/// length`, no visible text, no tool call), with the estimated reasoning as
+/// its output usage so the recovery can judge the call's rate, and the
+/// reasoning that streamed kept as a `Thinking` block so the recovery can
+/// carry it forward (`RunPolicy::truncated_empty_carry_reasoning_chars`).
+fn watchdog_dead_response(estimated_reasoning_tokens: u64, reasoning: String) -> ModelResponse {
     let usage = tinyinference_llm::Usage::new(0, estimated_reasoning_tokens);
+    let content = if reasoning.is_empty() {
+        Vec::new()
+    } else {
+        vec![tinyinference_llm::message::ContentBlock::Thinking {
+            text: reasoning,
+            signature: None,
+        }]
+    };
     ModelResponse {
         message: tinyinference_llm::message::AssistantMessage {
             id: None,
-            content: Vec::new(),
+            content,
             tool_calls: Vec::new(),
             usage: Some(usage),
             origin: None,
