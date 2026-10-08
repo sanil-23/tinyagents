@@ -38,6 +38,40 @@ fn boost_leaves_an_unset_cap_unset() {
 }
 
 #[test]
+fn nudge_cap_is_clamped_to_the_clock_affordable_cap() {
+    let plan = TruncatedRetryPlan {
+        current: Some(16_000),
+        next: Some(16_000),
+        base: Some(2_048),
+        dead_tokens: 16_000,
+        dead_ms: 16_000,
+        remaining: Some(std::time::Duration::from_millis(3_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.affordable_cap(), Some(3_000));
+    assert_eq!(plan.nudge_cap(), Some(3_000));
+    assert!(plan.another_nudge_fits());
+}
+
+#[test]
+fn nudge_is_rejected_when_even_the_minimum_cap_exceeds_the_clock_budget() {
+    let plan = TruncatedRetryPlan {
+        current: Some(4_096),
+        next: Some(4_096),
+        base: Some(2_048),
+        dead_tokens: 4_096,
+        dead_ms: 4_096,
+        remaining: Some(std::time::Duration::from_millis(2_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.affordable_cap(), None);
+    assert_eq!(plan.nudge_cap(), None);
+    assert!(!plan.another_nudge_fits());
+}
+
+#[test]
 fn reset_truncated_empty_clears_only_the_truncated_empty_state() {
     let mut recovery = spent();
     recovery.reset_truncated_empty();
