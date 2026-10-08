@@ -84,7 +84,7 @@ impl TruncatedRetryPlan {
 
     /// The retry finishes inside its share of the remaining clock, or there is
     /// no clock to keep.
-    fn fits_clock(&self) -> bool {
+    pub(super) fn fits_clock(&self) -> bool {
         match self.remaining {
             Some(remaining) => {
                 self.expected_ms() as f64
