@@ -69,7 +69,10 @@ fn call_timeout_is_a_provider_timeout() {
     );
     assert_eq!(o.class, TerminalClass::Timeout);
     assert_eq!(o.timeout_phase, Some(TimeoutPhase::Provider));
-    assert!(o.provider_started, "a call timeout inside a call means it started");
+    assert!(
+        o.provider_started,
+        "a call timeout inside a call means it started"
+    );
 }
 
 #[test]
