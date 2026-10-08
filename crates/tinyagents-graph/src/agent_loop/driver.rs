@@ -276,7 +276,12 @@ where
         // interrupt.
         match outcome {
             Ok(None) => {
-                let outcome = terminal.expect("terminal set before after_agent");
+                // `after_agent` may have replaced the outcome; report the final one.
+                let outcome = run
+                    .terminal
+                    .clone()
+                    .or(terminal)
+                    .expect("terminal set before after_agent");
                 let record = ctx.emit(AgentEvent::RunCompleted {
                     run_id: ctx.run_id().clone(),
                     outcome: Some(outcome),

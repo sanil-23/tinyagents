@@ -77,10 +77,14 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         run.terminal = Some(terminal.clone());
 
         status.mark_running(HarnessPhase::Middleware);
-        self.middleware.run_after_agent(ctx, state, run).await?;
+        let after_agent = self.middleware.run_after_agent(ctx, state, run).await;
         // `after_agent` may post-process `run.messages`; announce anything it
-        // appended so a mirror built from lifecycle events matches the result.
+        // appended (even if it then failed) so a mirror built from lifecycle
+        // events matches the returned transcript.
         ctx.flush_transcript(self.policy.capture, &run.messages);
+        after_agent?;
+        // The hook may have replaced the outcome; the event reports the final one.
+        let terminal = run.terminal.clone().unwrap_or(terminal);
 
         match exit {
             LoopExit::Finished | LoopExit::LimitStop(_) => {

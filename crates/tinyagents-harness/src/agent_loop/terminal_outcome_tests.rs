@@ -386,3 +386,75 @@ async fn a_wrap_model_rejection_before_dispatch_does_not_claim_the_provider_star
     assert!(!outcome.provider_started);
     assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::BeforeProvider));
 }
+
+#[tokio::test]
+async fn run_completed_reports_the_outcome_after_after_agent_middleware_replaced_it() {
+    use crate::middleware::{AgentRun, Middleware};
+    struct Replace;
+    #[async_trait]
+    impl Middleware<(), ()> for Replace {
+        fn name(&self) -> &str {
+            "replace"
+        }
+        async fn after_agent(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            run: &mut AgentRun,
+        ) -> crate::error::Result<()> {
+            run.terminal = Some(TerminalOutcome::new(TerminalReason::Timeout, "forced"));
+            Ok(())
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_middleware(Arc::new(Replace));
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("rep"), ()).with_events(recorder.sink());
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .unwrap();
+    let events = recorder.events();
+    assert!(matches!(
+        terminal_events(&events)[0],
+        AgentEvent::RunCompleted { outcome: Some(o), .. } if o.reason == TerminalReason::Timeout
+    ));
+}
+
+#[tokio::test]
+async fn a_later_call_rejected_before_dispatch_is_not_a_provider_phase_failure() {
+    use crate::middleware::{MiddlewareModelOutcome, ModelHandler, ModelMiddleware};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct RejectSecond(AtomicUsize);
+    #[async_trait]
+    impl ModelMiddleware<(), ()> for RejectSecond {
+        fn name(&self) -> &str {
+            "reject_second"
+        }
+        async fn wrap_model(
+            &self,
+            ctx: &mut RunContext<()>,
+            state: &(),
+            request: ModelRequest,
+            next: ModelHandler<'_, (), ()>,
+        ) -> crate::error::Result<MiddlewareModelOutcome> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                next.run(ctx, state, request).await
+            } else {
+                Err(TinyAgentsError::Timeout("rejected before dispatch".into()))
+            }
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![
+        response(vec![ToolCall::new("c1", "t", serde_json::json!({}))], ""),
+        response(vec![], "done"),
+    ])));
+    harness.push_model_middleware(Arc::new(RejectSecond(AtomicUsize::new(0))));
+    let ctx = RunContext::new(RunConfig::new("second"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("hi")])
+        .await;
+    assert!(partial.error.is_some());
+    let outcome = partial.run.terminal.expect("outcome");
+    assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::BeforeProvider));
+}
