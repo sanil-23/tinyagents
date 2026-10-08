@@ -828,6 +828,14 @@ impl<Ctx> RunContext<Ctx> {
             .take();
     }
 
+    /// The most recent `LimitReached` kind, without consuming it.
+    pub fn peek_last_limit(&self) -> Option<crate::events::LimitKind> {
+        *self
+            .last_limit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub(crate) fn take_last_limit(&self) -> Option<crate::events::LimitKind> {
         self.last_limit
             .lock()

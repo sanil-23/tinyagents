@@ -4236,6 +4236,17 @@ impl SessionHooks for OutcomeHook {
     }
 }
 
+/// Waits (bounded) until the detached terminal task has recorded `count`
+/// outcomes, instead of relying on scheduler order.
+async fn wait_for_outcomes(hook: &OutcomeHook, count: usize) {
+    for _ in 0..500 {
+        if hook.outcomes.lock().unwrap().len() >= count {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 fn outcome_hook() -> Arc<OutcomeHook> {
     Arc::new(OutcomeHook {
         outcomes: Mutex::default(),
@@ -4306,7 +4317,7 @@ async fn completed_turns_report_a_completed_outcome() {
         )
         .await
         .unwrap();
-    tokio::task::yield_now().await;
+    wait_for_outcomes(&hook, 1).await;
     let outcomes = hook.outcomes.lock().unwrap();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].reason, TerminalReason::Completed);
@@ -4346,7 +4357,7 @@ async fn a_drivers_typed_success_outcome_is_not_flattened_to_completed() {
         .await
         .unwrap();
     for _ in 0..5 {
-        tokio::task::yield_now().await;
+        wait_for_outcomes(&hook, 1).await;
     }
     let outcomes = hook.outcomes.lock().unwrap();
     assert_eq!(outcomes.as_slice(), [capped]);

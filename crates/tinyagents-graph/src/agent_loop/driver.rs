@@ -237,16 +237,27 @@ where
                 };
                 Some(outcome.with_provider_started(ctx.provider_started()))
             }
-            Err(error) => Some(TerminalOutcome::from_error(
-                error,
-                if ctx.model_call_failed() && ctx.call_provider_started() {
-                    tinyagents_harness::terminal::TimeoutPhase::Provider
+            Err(error) => {
+                use tinyagents_harness::terminal::TimeoutPhase;
+                let in_model_call = ctx.model_call_failed() || ctx.active_model_call.is_some();
+                let site = if in_model_call && ctx.call_provider_started() {
+                    TimeoutPhase::Provider
+                } else if in_model_call {
+                    TimeoutPhase::BeforeProvider
                 } else if ctx.provider_started() {
-                    tinyagents_harness::terminal::TimeoutPhase::AfterTurn
+                    TimeoutPhase::AfterTurn
                 } else {
-                    tinyagents_harness::terminal::TimeoutPhase::BeforeProvider
-                },
-            )),
+                    TimeoutPhase::BeforeProvider
+                };
+                // A `LimitExceeded` carries only text; the cap that tripped was
+                // announced by a `LimitReached` event just before.
+                let kind = matches!(error, TinyAgentsError::LimitExceeded(_))
+                    .then(|| ctx.peek_last_limit())
+                    .flatten();
+                let mut outcome = TerminalOutcome::from_error(error, site).with_limit_kind(kind);
+                outcome.provider_started |= ctx.provider_started();
+                Some(outcome)
+            }
         };
         run.terminal = terminal.clone();
         status.mark_running(HarnessPhase::Middleware);
