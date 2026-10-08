@@ -216,7 +216,7 @@ where
                 } else {
                     TerminalOutcome::completed()
                 };
-                Some(reason.with_provider_started(run.model_calls > 0))
+                Some(reason.with_provider_started(ctx.provider_started()))
             }
             Ok(Some(interrupt)) => {
                 let reason = interrupt
@@ -235,7 +235,7 @@ where
                             .unwrap_or_else(|| format!("paused at node `{}`", interrupt.node)),
                     )
                 };
-                Some(outcome.with_provider_started(run.model_calls > 0))
+                Some(outcome.with_provider_started(ctx.provider_started()))
             }
             Err(error) => Some(TerminalOutcome::from_error(
                 error,
