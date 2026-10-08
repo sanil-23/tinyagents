@@ -630,7 +630,18 @@ impl<Ctx> RunContext<Ctx> {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Whether a repeat was noted since the last take; clears it.
+    /// Asks for reasoning on the next model call, whatever the loop's
+    /// reasoning fallback would otherwise do. Same flag as
+    /// [`Self::note_repeat`]: a middleware about to issue a call where
+    /// thinking is worth a dead call's bounded cost (the finish check, which
+    /// has to ask what the request implied) uses this.
+    pub fn request_reasoning(&self) {
+        self.repeat_noted
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether a repeat was noted (or reasoning requested) since the last
+    /// take; clears it.
     pub fn take_repeat_noted(&self) -> bool {
         self.repeat_noted
             .swap(false, std::sync::atomic::Ordering::Relaxed)

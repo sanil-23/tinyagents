@@ -642,7 +642,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             // one the transcript can get past.
             // A repeat noted on the last tool result while reasoning is off
             // (`RunContext::note_repeat`) means the model is looping without
-            // it: hand reasoning back for this call.
+            // it, and the finish check (`RunContext::request_reasoning`) is
+            // the one call worth a dead call's bounded cost: hand reasoning
+            // back for this call.
             if ctx.take_repeat_noted()
                 && self.policy.truncated_empty_reasoning_fallback
                 && turn_recovery.reasoning_fallback.on_repeat_note()
@@ -650,13 +652,14 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 tracing::info!(
                     target: "tinyagents::agent_loop",
                     run_id = %ctx.run_id(),
-                    "[agent_loop] repeat noted while reasoning was off; reasoning restored for the next call"
+                    "[agent_loop] reasoning asked for while it was off (a repeat note or the finish check); reasoning restored for the next call"
                 );
                 ctx.emit(AgentEvent::ControlApplied {
                     control: "reasoning_restored".to_string(),
-                    detail: "the model repeated itself with reasoning switched off; reasoning is \
-                             back on for the next call"
-                        .to_string(),
+                    detail:
+                        "reasoning was asked for while switched off (the model repeated itself, \
+                             or the finish check is next); it is back on for the next call"
+                            .to_string(),
                 });
             }
             if self.policy.truncated_empty_reasoning_fallback
