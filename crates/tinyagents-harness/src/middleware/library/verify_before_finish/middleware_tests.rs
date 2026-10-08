@@ -531,3 +531,36 @@ async fn skips_when_the_wrap_up_already_announced_a_budget_notice() {
         );
     }
 }
+
+/// A reasoning-only response that hits the output cap carries no text AND
+/// `finish_reason` "length". Reported as `empty_answer` it reads like the
+/// model declining to answer; it is really a call that produced nothing after
+/// spending its whole budget on reasoning, and the two need different
+/// responses from whoever reads the log.
+#[tokio::test]
+async fn a_truncated_response_with_no_output_is_not_reported_as_an_empty_answer() {
+    let mw = VerifyBeforeFinishMiddleware::new(CHECK);
+    let ctx = RunContext::new(RunConfig::new("vbf").with_max_model_calls(10), ());
+
+    let mut reasoning_only = answer("   ");
+    reasoning_only.finish_reason = Some("length".to_string());
+    assert_eq!(
+        mw.skip_reason(&ctx, &reasoning_only),
+        Some("truncated_before_any_output"),
+        "no text plus length must name the truncation, not the emptiness"
+    );
+
+    let mut partial = answer("half an ans");
+    partial.finish_reason = Some("length".to_string());
+    assert_eq!(mw.skip_reason(&ctx, &partial), Some("truncated"));
+
+    let empty = answer("   ");
+    assert_eq!(
+        mw.skip_reason(&ctx, &empty),
+        Some("empty_answer"),
+        "an answer that is merely empty keeps its own reason"
+    );
+
+    let fine = answer("a real answer");
+    assert_eq!(mw.skip_reason(&ctx, &fine), None);
+}
