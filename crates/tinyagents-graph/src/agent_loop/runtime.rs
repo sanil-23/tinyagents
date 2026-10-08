@@ -306,7 +306,6 @@ where
             loop_state.finished = true;
             loop_state.limit_stop = true;
             loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ModelCalls);
-            loop_state.limit_stop = true;
             if loop_state.final_text.is_none() {
                 loop_state.final_text = Some(last_assistant_text(&loop_state.messages));
             }
@@ -555,7 +554,10 @@ where
                 tinyagents_harness::limits::LimitBehavior::StopWithPartial
             ) && matches!(error, TinyAgentsError::LimitExceeded(_)) =>
         {
+            // Tool admission raises `LimitExceeded` only for the tool-call cap
+            // (a wall-clock expiry is `Timeout`), so the kind is known here.
             loop_state.limit_stop = true;
+            loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ToolCalls);
             loop_state.finished = true;
             if loop_state.final_text.is_none() {
                 loop_state.final_text = Some(last_assistant_text(&loop_state.messages));

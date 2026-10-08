@@ -208,7 +208,10 @@ where
                 let reason = if limit_stop {
                     TerminalOutcome::limit_reached(
                         limit_kind,
-                        "stopped with the partial run: model_calls limit reached",
+                        format!(
+                            "stopped with the partial run: {} limit reached",
+                            limit_kind.map_or("run", |kind| kind.as_str())
+                        ),
                     )
                 } else {
                     TerminalOutcome::completed()
