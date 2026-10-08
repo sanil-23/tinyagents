@@ -45,7 +45,7 @@ fn nudge_cap_is_clamped_to_the_clock_affordable_cap() {
         base: Some(2_048),
         dead_tokens: 16_000,
         dead_ms: 16_000,
-        remaining: Some(std::time::Duration::from_millis(3_000)),
+        remaining: Some(std::time::Duration::from_millis(6_000)),
         first_retry: false,
     };
 
