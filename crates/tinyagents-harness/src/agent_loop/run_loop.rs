@@ -843,6 +843,10 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 super::dialect::withhold_text_calls(&mut response, &call_id, &recovery.dropped);
             }
 
+            // The provider call has returned: a failure from here on (response
+            // accounting, `after_model`) is after-turn, not an in-flight call.
+            ctx.active_model_call = None;
+
             // Account for the completed provider response before fallible
             // response middleware (see `model_turn.rs`). A middleware rejection
             // must not erase usage already incurred, and the host admission
@@ -868,7 +872,6 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 .middleware
                 .run_after_model(ctx, state, &mut response)
                 .await;
-            ctx.active_model_call = None;
             after_model?;
             let captured_output = self
                 .policy

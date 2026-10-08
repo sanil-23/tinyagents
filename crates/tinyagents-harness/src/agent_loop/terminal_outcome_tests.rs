@@ -324,3 +324,34 @@ async fn a_cache_served_run_does_not_claim_the_provider_started() {
     assert_eq!(second.text(), Some("done".to_string()));
     assert!(!second.terminal.unwrap().provider_started);
 }
+
+#[tokio::test]
+async fn an_after_model_timeout_is_classified_after_the_provider_call() {
+    use crate::middleware::Middleware;
+    struct SlowAfterModel;
+    #[async_trait]
+    impl Middleware<(), ()> for SlowAfterModel {
+        fn name(&self) -> &str {
+            "slow_after_model"
+        }
+        async fn after_model(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            _: &mut ModelResponse,
+        ) -> crate::error::Result<()> {
+            Err(TinyAgentsError::Timeout("hook deadline".into()))
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_middleware(Arc::new(SlowAfterModel));
+    let ctx = RunContext::new(RunConfig::new("am"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("hi")])
+        .await;
+    assert!(partial.error.is_some());
+    let outcome = partial.run.terminal.expect("outcome");
+    assert_eq!(outcome.reason, TerminalReason::Timeout);
+    assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::AfterTurn));
+    assert!(outcome.provider_started);
+}
