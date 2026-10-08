@@ -576,6 +576,32 @@ async fn nested_calls_are_summarised_in_parent_metadata_not_the_transcript() {
 }
 
 #[tokio::test]
+async fn nested_calls_emit_no_message_appended_events() {
+    let caller = Caller::new("caller", vec![("leaf", json!({"n": 1}))]);
+    let mut harness = harness_with(vec![parent_call("p1", "caller")], enabled());
+    harness.register_tool(Leaf::new("leaf"));
+    harness.register_tool(Arc::new(caller));
+
+    let recorder = EventRecorder::new();
+    run(&harness, &recorder).await.expect("run succeeds");
+    assert_eq!(nested_started(&recorder), 1);
+
+    // Only the model-issued call owns a transcript row; a nested call must
+    // never be announced as an appended message.
+    let tool_rows: Vec<Option<String>> = recorder
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::MessageAppended { role, call_id, .. } if role == "tool" => {
+                Some(call_id.as_ref().map(ToString::to_string))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tool_rows, [Some("p1".to_string())]);
+}
+
+#[tokio::test]
 async fn the_nested_summary_is_capped_and_truncates_long_arguments() {
     let script: Vec<(&'static str, Value)> = (0..40)
         .map(|_| ("leaf", json!({"n": "x".repeat(4000)})))

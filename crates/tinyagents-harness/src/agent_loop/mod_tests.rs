@@ -8929,3 +8929,45 @@ async fn graceful_mixed_turn_without_truncation_still_finishes_in_one_call() {
     );
     assert_eq!(*tool.calls.lock().unwrap(), 1);
 }
+
+/// A fold of a tool-set change into the leading system message rewrites the
+/// transcript in place; the lifecycle events report it so a mirror stays exact.
+#[tokio::test]
+async fn dynamic_toolset_fold_is_reported_as_a_transcript_rewrite() {
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model(
+        "mock",
+        Arc::new(MockModel::with_responses(vec![
+            tool_call_response("call-1", "search", json!({"q": "x"})),
+            text_response("done", 4, 2),
+        ])),
+    );
+    let search: Arc<dyn Tool> = Arc::new(FakeTool::new("search", "search-output"));
+    let browse: Arc<dyn Tool> = Arc::new(FakeTool::new("browse", "browse-output"));
+    let toolset = Arc::new(DynamicToolSet {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        search: search.clone(),
+        browse,
+    });
+    harness.with_toolset(toolset.clone());
+    harness.register_tool_dispatch(Arc::new(crate::tool::toolset::ToolSetDispatchBridge::new(
+        toolset, search,
+    )));
+    let recorder = crate::testkit::EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("fold-rewrite"), ()).with_events(recorder.sink());
+    let seed = vec![Message::system("baseline persona"), Message::user("go")];
+
+    let run = harness
+        .invoke_in_context(&(), ctx, seed.clone())
+        .await
+        .expect("run succeeds");
+
+    let events = recorder.events();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::TranscriptRewritten { reason, .. } if reason == "tool_change")),
+        "the in-place fold is announced"
+    );
+    super::lifecycle_test::assert_mirrors(&events, &seed, &run.messages);
+}

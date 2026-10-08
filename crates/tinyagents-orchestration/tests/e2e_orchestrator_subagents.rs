@@ -241,6 +241,7 @@ async fn orchestrator_resolves_and_runs_only_the_chosen_subagents() -> Result<()
 
     sink.emit(AgentEvent::RunCompleted {
         run_id: RunId::new("orchestrator"),
+        outcome: None,
     });
 
     // 4. Compose the resolved sub-agents' outputs into one final answer.
