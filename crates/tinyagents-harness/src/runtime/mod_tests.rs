@@ -3611,7 +3611,10 @@ async fn hosted_error_run_terminal_outcome_message_is_sanitized() {
         .invoke_agent(
             AgentInvocation::new(
                 host,
-                AgentTurnRequest::new("helper", vec![Message::user("hi")]),
+                AgentTurnRequest::new(
+                    "helper",
+                    vec![tinyinference_llm::message::Message::user("hi")],
+                ),
                 RunContext::new(RunConfig::new("leaky"), ()),
             ),
             &(),
