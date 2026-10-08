@@ -318,6 +318,10 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             request
         };
 
+        // The provider is reached only past the cache lookup and the wrap
+        // onion, so a cache hit or a short-circuiting middleware never claims
+        // `provider_started`.
+        ctx.mark_provider_started();
         let response = self
             .invoke_model_resolving(state, ctx, effective_request, call_id, binding, shape)
             .await?;
@@ -1841,7 +1845,6 @@ impl<State: Send + Sync, Ctx: Send + Sync> ModelBaseCall<State, Ctx>
             // failure: a wrap middleware may answer in place of the failed
             // attempt, and that answer attempted no call.
             self.shape.recovery.dropped.reset();
-            ctx.mark_provider_started();
             ctx.call_streamed = self.shape.streaming;
             let result = self
                 .harness
