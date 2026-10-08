@@ -521,7 +521,7 @@ async fn messages_appended_by_after_agent_middleware_are_announced() {
     harness.register_model(
         "mock",
         Arc::new(crate::testkit::ScriptedModel::new(vec![
-            crate::testkit::text_response("done", 1, 1),
+            crate::testkit::text_response("done"),
         ])),
     );
     harness.push_middleware(Arc::new(Appender));
