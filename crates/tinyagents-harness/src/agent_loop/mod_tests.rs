@@ -1293,12 +1293,12 @@ impl<State: Send + Sync> ChatModel<State> for SlowFirstCall {
 
 #[tokio::test]
 async fn truncated_empty_retry_yields_to_the_clock() {
-    // A dead call of 400 ms for 2048 tokens says a retry at the same cap
+    // A dead call of 400 ms for 4096 tokens says a retry at the same cap
     // would take about 400 ms. With 600 ms of a 1 s run left, that is more
-    // than half the clock, so the loop nudges instead of retrying, and pins
-    // the cap to what the clock affords (here the floor: the original cap).
+    // than half the clock, so the loop skips the retry. A 2048-token nudge
+    // takes about 200 ms and fits the remaining clock.
     let scripted = Arc::new(crate::testkit::ScriptedModel::new(vec![
-        truncated_empty_response(2048),
+        truncated_empty_response(4096),
         text_response("recovered", 4, 3),
     ]));
     let model = Arc::new(SlowFirstCall {
@@ -1316,7 +1316,7 @@ async fn truncated_empty_retry_yields_to_the_clock() {
     use crate::testkit::EventRecorder;
     let recorder = EventRecorder::new();
     let ctx = RunContext::new(
-        RunConfig::new("truncated-clock").with_max_turn_output_tokens(2048),
+        RunConfig::new("truncated-clock").with_max_turn_output_tokens(4096),
         (),
     )
     .with_events(recorder.sink());
@@ -1330,8 +1330,8 @@ async fn truncated_empty_retry_yields_to_the_clock() {
     let sent: Vec<Option<u32>> = scripted.requests().iter().map(|r| r.max_tokens).collect();
     assert_eq!(
         sent,
-        vec![Some(2048), Some(2048)],
-        "the nudged call runs at the cap the clock affords, never below the original"
+        vec![Some(4096), Some(2048)],
+        "the nudged call runs at the cap the clock affords"
     );
     let skipped: Vec<String> = recorder
         .events()
