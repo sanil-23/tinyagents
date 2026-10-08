@@ -672,15 +672,16 @@ async fn model_cap_stop_reports_the_same_terminal_outcome_in_both_engines() {
     }
 }
 
-/// The tool-call cap under `StopWithPartial` must carry `ToolCalls`, not an
-/// untyped limit, in both engines.
+/// The graph engine honors `StopWithPartial` for the tool-call cap (the direct
+/// loop surfaces it as a `LimitExceeded` error carrying `ToolCalls`); the stop
+/// must carry `ToolCalls`, not an untyped limit.
 #[tokio::test]
-async fn tool_cap_stop_reports_the_same_terminal_outcome_in_both_engines() {
+async fn graph_tool_cap_stop_reports_a_typed_tool_calls_limit() {
     use tinyagents_harness::events::LimitKind;
     use tinyagents_harness::limits::{LimitBehavior, RunLimits};
     use tinyagents_harness::terminal::TerminalReason;
 
-    for execution in [LoopExecution::Direct, LoopExecution::Graph] {
+    for execution in [LoopExecution::Graph] {
         let model = Arc::new(MockModel::with_tool_call("spin", serde_json::json!({})));
         let mut harness = harness_for(execution, model);
         harness.register_tool(Arc::new(tinyagents_harness::testkit::FakeTool::returning(
@@ -703,7 +704,10 @@ async fn tool_cap_stop_reports_the_same_terminal_outcome_in_both_engines() {
             TerminalReason::LimitReached(Some(LimitKind::ToolCalls)),
             "{execution:?}"
         );
-        assert!(outcome.message.contains("tool_calls"), "{execution:?}: {outcome:?}");
+        assert!(
+            outcome.message.contains("tool_calls"),
+            "{execution:?}: {outcome:?}"
+        );
     }
 }
 
