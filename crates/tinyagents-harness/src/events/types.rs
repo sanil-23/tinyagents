@@ -235,6 +235,13 @@ pub enum AgentEvent {
         /// instead of waiting for [`AgentEvent::ToolCompleted`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<serde_json::Value>,
+        /// The call whose tool made this one through
+        /// `ToolExecutionContext::call_tool` — the **immediate** parent, which
+        /// is itself nested when this call is two or more levels deep (id
+        /// `p1/1/1` has parent `p1/1`). `None` for a call the model issued.
+        /// A nested call's `call_id` is `<parent call id>/<n>`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_call_id: Option<CallId>,
     },
 
     /// A tool invocation returned.
@@ -287,6 +294,13 @@ pub enum AgentEvent {
         /// tool's deliberate host-facing channel, not captured I/O.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         metadata: Option<serde_json::Value>,
+        /// The call whose tool made this one through
+        /// `ToolExecutionContext::call_tool` — the **immediate** parent, which
+        /// is itself nested when this call is two or more levels deep (id
+        /// `p1/1/1` has parent `p1/1`). `None` for a call the model issued.
+        /// A nested call's `call_id` is `<parent call id>/<n>`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_call_id: Option<CallId>,
     },
 
     /// A tool invocation failed and the run is propagating the error rather
@@ -319,6 +333,13 @@ pub enum AgentEvent {
         duration_ms: Option<u64>,
         /// Human-readable failure description.
         error: String,
+        /// The call whose tool made this one through
+        /// `ToolExecutionContext::call_tool` — the **immediate** parent, which
+        /// is itself nested when this call is two or more levels deep (id
+        /// `p1/1/1` has parent `p1/1`). `None` for a call the model issued.
+        /// A nested call's `call_id` is `<parent call id>/<n>`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_call_id: Option<CallId>,
     },
 
     /// A resumed run reconciled an unresolved tool-effect-ledger row left
@@ -468,12 +489,22 @@ pub enum AgentEvent {
     MiddlewareStarted {
         /// Registered name of the middleware.
         name: String,
+        /// The tool call this layer wraps, set only by the tool-wrap onion.
+        /// Wrapped calls of one batch run concurrently, so their events
+        /// interleave; pair a `Started` with its `Completed` and attribute
+        /// both to a call by this id, never by event order.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_id: Option<CallId>,
     },
 
     /// A middleware hook finished executing.
     MiddlewareCompleted {
         /// Registered name of the middleware.
         name: String,
+        /// The tool call this layer wrapped; see
+        /// [`AgentEvent::MiddlewareStarted::call_id`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_id: Option<CallId>,
     },
 
     /// A response-cache lookup served the model call from the local
@@ -857,16 +888,45 @@ pub enum AgentEvent {
     /// Defined for future emit when memory wiring lands.
     MemorySaved,
 
-    /// A long-running tool reported incremental progress before completing.
+    /// Legacy message-only progress shape. **The agent loop does not emit this
+    /// variant**; it emits [`AgentEvent::ToolProgressDetail`]. It is kept so
+    /// existing enum literals compile, and shares the `tool.progress` wire kind.
     ///
-    /// Defined for future emit: a tool that streams progress can surface it
-    /// here so UIs render activity between [`AgentEvent::ToolStarted`] and
-    /// [`AgentEvent::ToolCompleted`].
+    /// The ordering and flooding guarantees below describe the emitted
+    /// [`AgentEvent::ToolProgressDetail`]. Ordering guarantee: every progress event for a call falls between that call's
+    /// [`AgentEvent::ToolStarted`] and its terminal
+    /// [`AgentEvent::ToolCompleted`] / [`AgentEvent::ToolFailed`]; an update the
+    /// tool reports after the call has returned is dropped, never emitted late.
+    /// Calls in one concurrent batch interleave their progress freely. A tool
+    /// that floods is coalesced (see `crate::tool::ToolProgressLimits`), so the
+    /// stream is a faithful but possibly thinned view of what the tool reported.
     ToolProgress {
         /// Identifier for the in-flight tool call.
         call_id: CallId,
         /// Human-readable progress message.
         message: String,
+    },
+
+    /// A running tool reported incremental progress before completing, with
+    /// optional fraction and partial output. This is the variant the agent loop
+    /// emits (through [`tinytools::ToolRunContext::report_progress`]).
+    ///
+    /// The gate clamps `fraction` to `0.0..=1.0` (and drops NaN) before
+    /// emitting. The legacy [`AgentEvent::ToolProgress`] shape stays unchanged
+    /// so downstream enum literals continue to compile.
+    ToolProgressDetail {
+        /// Identifier for the in-flight tool call.
+        call_id: CallId,
+        /// Human-readable progress message; empty when the update carried only
+        /// a fraction or partial output.
+        #[serde(default)]
+        message: String,
+        /// Completion in `0.0..=1.0`, when the tool reported one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fraction: Option<f32>,
+        /// Partial output reported so far, passed through verbatim.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        partial: Option<serde_json::Value>,
     },
 
     /// An application-defined event a tool (or any holder of the run's
@@ -1036,7 +1096,9 @@ impl AgentEvent {
             AgentEvent::LimitReached { .. } => "limit.reached",
             AgentEvent::MemoryLoaded => "memory.loaded",
             AgentEvent::MemorySaved => "memory.saved",
-            AgentEvent::ToolProgress { .. } => "tool.progress",
+            AgentEvent::ToolProgress { .. } | AgentEvent::ToolProgressDetail { .. } => {
+                "tool.progress"
+            }
             AgentEvent::Custom { .. } => "custom",
             AgentEvent::MiddlewareFailed { .. } => "middleware.failed",
             AgentEvent::HandoffTransformApplied { .. } => "handoff.transform_applied",

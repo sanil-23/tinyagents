@@ -155,11 +155,13 @@ fn component_metadata_and_event_kinds_are_stable_serializable_contracts() {
             output: None,
         },
         AgentEvent::ToolStarted {
+            parent_call_id: None,
             call_id: CallId::new("tool-1"),
             tool_name: "lookup".into(),
             input: None,
         },
         AgentEvent::ToolCompleted {
+            parent_call_id: None,
             call_id: CallId::new("tool-1"),
             tool_name: "lookup".into(),
             started_at_ms: None,
@@ -171,8 +173,14 @@ fn component_metadata_and_event_kinds_are_stable_serializable_contracts() {
             metadata: None,
         },
         AgentEvent::StateUpdate,
-        AgentEvent::MiddlewareStarted { name: "mw".into() },
-        AgentEvent::MiddlewareCompleted { name: "mw".into() },
+        AgentEvent::MiddlewareStarted {
+            name: "mw".into(),
+            call_id: None,
+        },
+        AgentEvent::MiddlewareCompleted {
+            name: "mw".into(),
+            call_id: None,
+        },
         AgentEvent::CacheHit {
             call_id: CallId::new("cache-1"),
             key: "secret-key".into(),
@@ -227,6 +235,12 @@ fn component_metadata_and_event_kinds_are_stable_serializable_contracts() {
         AgentEvent::ToolProgress {
             call_id: CallId::new("tool-1"),
             message: "halfway".into(),
+        },
+        AgentEvent::ToolProgressDetail {
+            call_id: CallId::new("tool-1"),
+            message: "halfway".into(),
+            fraction: Some(0.5),
+            partial: None,
         },
         AgentEvent::MiddlewareFailed {
             name: "mw".into(),
@@ -287,11 +301,13 @@ async fn event_sinks_journals_and_status_stores_preserve_run_lineage() {
     let journal = EventJournal::new();
     assert!(journal.is_empty());
     journal.append(AgentEvent::ToolStarted {
+        parent_call_id: None,
         call_id: CallId::new("tool-1"),
         tool_name: "lookup".into(),
         input: None,
     });
     journal.append(AgentEvent::ToolCompleted {
+        parent_call_id: None,
         call_id: CallId::new("tool-1"),
         tool_name: "lookup".into(),
         started_at_ms: None,
