@@ -78,6 +78,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
 
         status.mark_running(HarnessPhase::Middleware);
         self.middleware.run_after_agent(ctx, state, run).await?;
+        // `after_agent` may post-process `run.messages`; announce anything it
+        // appended so a mirror built from lifecycle events matches the result.
+        ctx.flush_transcript(self.policy.capture, &run.messages);
 
         match exit {
             LoopExit::Finished | LoopExit::LimitStop(_) => {

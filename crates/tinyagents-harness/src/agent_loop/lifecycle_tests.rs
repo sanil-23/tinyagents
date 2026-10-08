@@ -497,3 +497,48 @@ async fn a_mixed_structured_turn_closes_before_queued_messages_are_drained() {
         "queued message after TurnCompleted: {lines:?}"
     );
 }
+
+#[tokio::test]
+async fn messages_appended_by_after_agent_middleware_are_announced() {
+    use crate::middleware::{AgentRun, Middleware};
+    struct Appender;
+    #[async_trait::async_trait]
+    impl Middleware<(), ()> for Appender {
+        fn name(&self) -> &str {
+            "appender"
+        }
+        async fn after_agent(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            run: &mut AgentRun,
+        ) -> crate::error::Result<()> {
+            run.messages.push(Message::user("added by middleware"));
+            Ok(())
+        }
+    }
+    let mut harness: AgentHarness<()> = AgentHarness::new();
+    harness.register_model(
+        "mock",
+        Arc::new(crate::testkit::ScriptedModel::new(vec![
+            crate::testkit::text_response("done", 1, 1),
+        ])),
+    );
+    harness.push_middleware(Arc::new(Appender));
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("aa-append"), ()).with_events(recorder.sink());
+    let run = harness
+        .invoke_in_context(&(), ctx, vec![Message::user("hi")])
+        .await
+        .unwrap();
+    let last = run.messages.len() - 1;
+    let announced: Vec<usize> = recorder
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::MessageAppended { index, .. } => Some(*index),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(announced.last(), Some(&last), "{announced:?}");
+}
