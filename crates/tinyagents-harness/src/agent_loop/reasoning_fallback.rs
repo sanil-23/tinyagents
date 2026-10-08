@@ -12,9 +12,14 @@
 //! off. The model then has to act from what it already knows, and the nudge
 //! that accompanies a repeated death tells it to do its working-out in the
 //! workspace (a scratch file, a small experiment) instead of in its head. The
-//! hold-off backs off: the first death costs one call without reasoning, the
-//! next two, then four, up to [`REASONING_FALLBACK_MAX_HOLDOFF`], so a model
-//! that keeps dying on this transcript spends less of the run proving it.
+//! hold-off backs off without a ceiling: the first death costs one call
+//! without reasoning, the next two, then four, eight, sixteen. Reasoning
+//! always comes back: a run that kept it off for good after a few deaths
+//! spent the rest of its budget writing probe after probe (seventeen in two
+//! minutes on one task), which is what a model without reasoning does with
+//! a hard step. With the watchdog bounding each death to its budget, a
+//! return to reasoning every doubling stretch costs little and is where the
+//! hard steps get solved.
 //!
 //! The state lives on [`super::types::TurnRecovery`] but, unlike the
 //! counters there, is run-wide: the hold-off outlives the turn that set it,
@@ -22,15 +27,12 @@
 
 use tinyinference_llm::model::{ModelRequest, ReasoningConfig, ReasoningEffort};
 
-/// Most consecutive live calls one dead call can switch reasoning off for.
-pub(super) const REASONING_FALLBACK_MAX_HOLDOFF: u32 = 8;
-
 /// Per-run state of the fallback.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct ReasoningFallback {
     /// Live calls still to go out without reasoning.
     holdoff: u32,
-    /// Hold-off the next dead call will set; doubles per death, clamped.
+    /// Hold-off the next dead call will set; doubles per death.
     scale: u32,
 }
 
@@ -40,7 +42,7 @@ impl ReasoningFallback {
     pub(super) fn on_dead_call(&mut self) -> u32 {
         let scale = self.scale.max(1);
         self.holdoff = scale;
-        self.scale = scale.saturating_mul(2).min(REASONING_FALLBACK_MAX_HOLDOFF);
+        self.scale = scale.saturating_mul(2);
         self.holdoff
     }
 

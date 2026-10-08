@@ -177,8 +177,10 @@ that deliberates past its cap; `reasoning.effort = none` does. So after a dead
 call the retry or nudged call goes out with reasoning switched off
 (`RunPolicy::truncated_empty_reasoning_fallback`, default `true`), at the same
 cap (the cap was for the deliberation), and the nudge tells the model to do its
-working-out in the workspace. The hold-off backs off per death (1, 2, 4, 8 live
-calls without reasoning) and the configured effort returns once it is spent;
+working-out in the workspace. The hold-off backs off per death (1, 2, 4, 8, 16
+live calls without reasoning, no ceiling) and the configured effort always
+returns once it is spent: kept off for good, a model spends the rest of a run
+writing probe programs instead of the deliverable;
 the switch is announced as `AgentEvent::ControlApplied` (`reasoning_fallback`).
 The state is run-wide (`agent_loop/reasoning_fallback.rs`): it outlives the
 turn that set it.

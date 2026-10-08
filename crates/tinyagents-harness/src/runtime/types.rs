@@ -362,9 +362,9 @@ pub struct RunPolicy {
     /// control that produced zero reasoning tokens. So the step is re-issued
     /// without reasoning, and the model has to act from what it already
     /// knows; the nudge tells it to do its working-out in the workspace. The
-    /// hold-off backs off (1, 2, 4, 8 live calls without reasoning) so a model
-    /// that keeps dying on this transcript spends less of the run proving it,
-    /// and reasoning returns once the hold-off is spent.
+    /// hold-off backs off (1, 2, 4, 8, 16 live calls without reasoning) and
+    /// reasoning always comes back: kept off for good, a model spent the rest
+    /// of a run writing probe programs instead of the deliverable.
     ///
     /// Defaults to `true`. A caller that must keep every call at the
     /// configured effort sets it to `false`.

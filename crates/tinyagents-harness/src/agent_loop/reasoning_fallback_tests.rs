@@ -40,18 +40,21 @@ fn first_death_switches_reasoning_off_for_one_call() {
 }
 
 #[test]
-fn hold_off_doubles_per_death_and_is_clamped() {
+fn hold_off_doubles_per_death_and_always_returns() {
     let mut fallback = ReasoningFallback::default();
     assert_eq!(fallback.on_dead_call(), 1);
     assert_eq!(fallback.on_dead_call(), 2);
     assert_eq!(fallback.on_dead_call(), 4);
     assert_eq!(fallback.on_dead_call(), 8);
-    assert_eq!(fallback.on_dead_call(), REASONING_FALLBACK_MAX_HOLDOFF);
-    for _ in 0..REASONING_FALLBACK_MAX_HOLDOFF {
+    assert_eq!(fallback.on_dead_call(), 16);
+    for _ in 0..16 {
         assert!(fallback.active());
         fallback.on_live_reply();
     }
-    assert!(!fallback.active());
+    assert!(
+        !fallback.active(),
+        "every hold-off is spent by live replies; reasoning always returns"
+    );
 }
 
 #[test]
@@ -108,7 +111,6 @@ fn a_repeat_note_hands_reasoning_back_mid_hold_off() {
     );
     assert!(fallback.on_repeat_note());
     assert!(!fallback.active(), "reasoning is back for the next call");
-    // The backoff scale stands: the next death holds off for the clamped
-    // eight again.
-    assert_eq!(fallback.on_dead_call(), REASONING_FALLBACK_MAX_HOLDOFF);
+    // The backoff scale stands: the next death holds off for sixteen.
+    assert_eq!(fallback.on_dead_call(), 16);
 }
