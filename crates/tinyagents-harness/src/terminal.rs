@@ -248,12 +248,7 @@ impl TerminalOutcome {
                 TerminalReason::ProviderFailed(Some(FailoverReason::Timeout)),
                 message,
             )
-            .with_timeout_phase(if site == TimeoutPhase::BeforeProvider {
-                // e.g. hosted model resolution timing out before any dispatch
-                TimeoutPhase::BeforeProvider
-            } else {
-                TimeoutPhase::Provider
-            }),
+            .with_timeout_phase(site),
             E::Provider(_)
             | E::Model(_)
             | E::ContextOverflow { .. }
@@ -261,7 +256,11 @@ impl TerminalOutcome {
             | E::EmptyResponse
             | E::GenerationStalled
             | E::SummarizationUsage { .. } => {
-                let reason = FailoverReason::classify(error);
+                // A summarizer failure wraps the real error; classify that.
+                let reason = match error {
+                    E::SummarizationUsage { error: inner, .. } => FailoverReason::classify(inner),
+                    other => FailoverReason::classify(other),
+                };
                 let outcome = Self::new(TerminalReason::ProviderFailed(Some(reason)), message);
                 if reason == FailoverReason::Timeout {
                     outcome.with_timeout_phase(site)

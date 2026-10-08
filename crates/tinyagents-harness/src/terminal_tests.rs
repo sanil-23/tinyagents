@@ -265,4 +265,21 @@ fn a_call_timeout_before_dispatch_keeps_the_pre_provider_phase() {
     let during = TerminalOutcome::from_error(&error, TimeoutPhase::Provider);
     assert_eq!(during.timeout_phase, Some(TimeoutPhase::Provider));
     assert!(during.provider_started);
+    let after = TerminalOutcome::from_error(&error, TimeoutPhase::AfterTurn);
+    assert_eq!(after.timeout_phase, Some(TimeoutPhase::AfterTurn));
+}
+
+#[test]
+fn a_summarizer_failure_is_classified_from_its_inner_error() {
+    let error = TinyAgentsError::SummarizationUsage {
+        error: Box::new(TinyAgentsError::Provider(
+            "HTTP 429 too many requests".into(),
+        )),
+        usage: Default::default(),
+    };
+    let o = TerminalOutcome::from_error(&error, TimeoutPhase::AfterTurn);
+    assert_eq!(
+        o.reason,
+        TerminalReason::ProviderFailed(Some(FailoverReason::RateLimit))
+    );
 }
