@@ -38,6 +38,75 @@ fn boost_leaves_an_unset_cap_unset() {
 }
 
 #[test]
+fn nudge_cap_is_clamped_to_the_clock_affordable_cap() {
+    let plan = TruncatedRetryPlan {
+        current: Some(16_000),
+        next: Some(16_000),
+        base: Some(2_048),
+        dead_tokens: 16_000,
+        dead_ms: 16_000,
+        remaining: Some(std::time::Duration::from_millis(6_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.affordable_cap(), Some(3_000));
+    assert_eq!(plan.nudge_cap(), Some(3_000));
+    assert!(plan.another_nudge_fits());
+}
+
+#[test]
+fn nudge_is_rejected_when_even_the_minimum_cap_exceeds_the_clock_budget() {
+    let plan = TruncatedRetryPlan {
+        current: Some(4_096),
+        next: Some(4_096),
+        base: Some(2_048),
+        dead_tokens: 4_096,
+        dead_ms: 4_096,
+        remaining: Some(std::time::Duration::from_millis(2_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.affordable_cap(), None);
+    assert_eq!(plan.nudge_cap(), None);
+    assert!(!plan.another_nudge_fits());
+}
+
+#[test]
+fn uncapped_nudge_uses_the_dead_call_duration_as_its_clock_estimate() {
+    let enough_time = TruncatedRetryPlan {
+        current: None,
+        next: None,
+        base: None,
+        dead_tokens: 0,
+        dead_ms: 1_000,
+        remaining: Some(std::time::Duration::from_millis(3_000)),
+        first_retry: false,
+    };
+    let too_little_time = TruncatedRetryPlan {
+        remaining: Some(std::time::Duration::from_millis(1_000)),
+        ..enough_time
+    };
+
+    assert!(enough_time.another_nudge_fits());
+    assert!(!too_little_time.another_nudge_fits());
+}
+
+#[test]
+fn retry_clock_estimate_scales_with_the_candidate_cap_without_usage() {
+    let plan = TruncatedRetryPlan {
+        current: Some(4_000),
+        next: Some(8_000),
+        base: Some(4_000),
+        dead_tokens: 0,
+        dead_ms: 1_000,
+        remaining: Some(std::time::Duration::from_millis(10_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.expected_ms(), 2_000);
+}
+
+#[test]
 fn reset_truncated_empty_clears_only_the_truncated_empty_state() {
     let mut recovery = spent();
     recovery.reset_truncated_empty();

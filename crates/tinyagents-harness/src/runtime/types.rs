@@ -326,8 +326,14 @@ pub struct RunPolicy {
     /// The retry runs *before* [`Self::error_on_empty_response`]; only once
     /// these retries are exhausted does that guard (if enabled) apply.
     ///
-    /// Defaults to `1` (one retry, two attempts total). Set to `0` to disable
-    /// for exact-replay callers that must not re-issue a call.
+    /// The first retry re-sends at the same cap (most dead calls are a long
+    /// think the model does not repeat); the second doubles it, clamped at 4x,
+    /// for the step that genuinely no longer fits. A retry that would run past
+    /// half the run's remaining wall clock is skipped in favour of the nudge.
+    ///
+    /// Defaults to `2` (two retries, three attempts total): one at the same
+    /// cap and one with room. Set to `0` to disable for exact-replay callers
+    /// that must not re-issue a call.
     pub truncated_empty_retries: u32,
     /// Re-prompts after [`Self::truncated_empty_retries`] are spent and the
     /// model *still* returned a truncated-empty completion.
@@ -652,7 +658,7 @@ impl Default for RunPolicy {
             // On by default: a truncated-empty completion is useless to every
             // caller, so one stochastic-failure retry is strictly better than a
             // blank final.
-            truncated_empty_retries: 1,
+            truncated_empty_retries: 2,
             // A truncation that survives the boosted retry is a model that
             // keeps deliberating; one plain "stop and act" re-prompt recovers
             // the step instead of ending the run on a blank reply.

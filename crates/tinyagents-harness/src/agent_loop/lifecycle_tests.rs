@@ -337,6 +337,7 @@ async fn a_recovery_pop_is_retracted_and_the_mirror_stays_exact() {
     let model_script = vec![
         truncated_empty(2048),
         truncated_empty(4096),
+        truncated_empty(8192),
         tool_turn(&["c1"]),
         response(vec![], "done"),
     ];
@@ -358,7 +359,7 @@ async fn a_recovery_pop_is_retracted_and_the_mirror_stays_exact() {
         .iter()
         .filter(|e| matches!(e, AgentEvent::MessageRetracted { index: 1 }))
         .count();
-    assert_eq!(retractions, 2, "both blank replies were dropped");
+    assert_eq!(retractions, 3, "all blank replies were dropped");
     // The recovery nudge is announced as an ordinary append.
     assert!(
         events.iter().any(|e| matches!(
