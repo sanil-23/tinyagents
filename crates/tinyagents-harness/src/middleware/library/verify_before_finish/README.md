@@ -12,7 +12,8 @@ and per-run state. `middleware.rs` contains configuration and lifecycle hooks;
 The check is skipped for tool-bearing, empty, truncated, or already continued
 responses and when call or wall-clock budget is too small. The check asks the
 agent loop for reasoning on the call it holds the answer for
-(`RunContext::request_reasoning`): a result fitted on the wrong axis is caught
+(`RunContext::request_reasoning`, a no-op unless the loop's fallback has switched
+reasoning off after dead calls): a result fitted on the wrong axis is caught
 by asking what the request implied, which a model running without reasoning
 (the loop's fallback after dead calls) does not do. Successful and
 failed runs release activity through lifecycle hooks. Deferred runs put their

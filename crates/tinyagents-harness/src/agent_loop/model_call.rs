@@ -1455,6 +1455,8 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 if let Some(bound) = reasoning_bound
                     && streamed_text.trim().is_empty()
                     && !saw_tool_delta
+                    && message_delta.tool_call.is_none()
+                    && model_delta.tool_call.is_none()
                     && estimated_reasoning_tokens(&streamed_reasoning) > u64::from(bound)
                 {
                     let estimated = estimated_reasoning_tokens(&streamed_reasoning);
