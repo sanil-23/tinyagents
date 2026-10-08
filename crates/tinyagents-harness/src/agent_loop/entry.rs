@@ -496,7 +496,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     .flatten();
                 let mut outcome =
                     TerminalOutcome::from_error(&error, site).with_limit_kind(last_limit);
-                if outcome.reason == TerminalReason::Timeout && outcome.timeout_phase.is_none() {
+                if outcome.reason == crate::terminal::TerminalReason::Timeout
+                    && outcome.timeout_phase.is_none()
+                {
                     // A wall-clock kind filled in after classification.
                     outcome = outcome.with_timeout_phase(site);
                 }
