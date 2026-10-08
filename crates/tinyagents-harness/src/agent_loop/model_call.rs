@@ -1223,6 +1223,11 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         let mut transformed_tools = StreamAccumulator::new();
         let mut saw_tool_delta = false;
         let mut stream_stall = StreamTextStallDetector::default();
+        // Client-side bound on hidden reasoning (see
+        // `RunPolicy::reasoning_watchdog`): the reasoning-token count at which
+        // a call that has shown nothing visible is ended as a dead call.
+        let reasoning_bound = self.policy.reasoning_watchdog.bound_for(request);
+        let watchdog_started = std::time::Instant::now();
 
         // Some providers pad the very first streamed text chunk with
         // whitespace that is a wire-format artifact, not content (see
@@ -1441,6 +1446,38 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     || !model_delta.reasoning.is_empty();
                 streamed_text.push_str(&model_delta.content);
                 streamed_reasoning.push_str(&model_delta.reasoning);
+                // Reasoning past the bound with nothing visible yet: end the
+                // call here as the dead call it was going to be, instead of
+                // waiting for the provider to reach the output cap. Dropping
+                // `stream` on return closes the connection. The loop sees the
+                // same response a cap-truncated call produces and runs its
+                // truncated-empty recovery.
+                if let Some(bound) = reasoning_bound
+                    && streamed_text.trim().is_empty()
+                    && !saw_tool_delta
+                    && estimated_reasoning_tokens(&streamed_reasoning) > u64::from(bound)
+                {
+                    let estimated = estimated_reasoning_tokens(&streamed_reasoning);
+                    let elapsed_ms = watchdog_started.elapsed().as_millis() as u64;
+                    tracing::warn!(
+                        target: "tinyagents::agent_loop",
+                        run_id = %ctx.run_id(),
+                        call_id = %call_id,
+                        bound,
+                        estimated_reasoning_tokens = estimated,
+                        elapsed_ms,
+                        "[stream] reasoning watchdog ended a call that reasoned past its budget with nothing visible"
+                    );
+                    ctx.emit(AgentEvent::ControlApplied {
+                        control: "reasoning_watchdog".to_string(),
+                        detail: format!(
+                            "model call `{call_id}` reasoned past its {bound}-token budget (about \
+                             {estimated} tokens in {elapsed_ms} ms) with no visible output; the call \
+                             was ended and is treated as a dead call"
+                        ),
+                    });
+                    return Ok(watchdog_dead_response(estimated));
+                }
                 let forwarded_delta = MessageDelta {
                     text: model_delta.content.clone(),
                     reasoning: model_delta.reasoning.clone(),
@@ -1926,9 +1963,46 @@ impl<State: Send + Sync, Ctx: Send + Sync> ToolBaseCall<State, Ctx>
     }
 }
 
+/// Reasoning tokens a streamed reasoning text amounts to, estimated at four
+/// characters per token. English prose runs a little under that and code or
+/// maths a little over, so the estimate under-counts and a bound built on it
+/// fires late rather than early.
+fn estimated_reasoning_tokens(reasoning: &str) -> u64 {
+    (reasoning.len() as u64) / 4
+}
+
+/// The response the reasoning watchdog hands the loop in place of the call it
+/// ended: the shape a call truncated at its output cap has (`finish_reason =
+/// length`, no content, no tool call), with the estimated reasoning as its
+/// output usage so the recovery can judge the call's rate.
+fn watchdog_dead_response(estimated_reasoning_tokens: u64) -> ModelResponse {
+    let usage = tinyinference_llm::Usage::new(0, estimated_reasoning_tokens);
+    ModelResponse {
+        message: tinyinference_llm::message::AssistantMessage {
+            id: None,
+            content: Vec::new(),
+            tool_calls: Vec::new(),
+            usage: Some(usage),
+            origin: None,
+        },
+        usage: Some(usage),
+        finish_reason: Some("length".to_string()),
+        raw: None,
+        resolved_model: None,
+        continue_turn: None,
+        served_from_cache: false,
+        correlation: None,
+        resolved_route: None,
+    }
+}
+
 #[cfg(test)]
 #[path = "model_call_failover_tests.rs"]
 mod failover_test;
+
+#[cfg(test)]
+#[path = "model_call_watchdog_tests.rs"]
+mod watchdog_tests;
 
 /// Retargets an attempt's wire-level `request.model` at a fallback binding,
 /// but only when the request already carried an explicit model. Registry names

@@ -183,6 +183,16 @@ the switch is announced as `AgentEvent::ControlApplied` (`reasoning_fallback`).
 The state is run-wide (`agent_loop/reasoning_fallback.rs`): it outlives the
 turn that set it.
 
+A request's `reasoning.budget_tokens` is a promise the provider may not keep,
+and every streamed call measured that reasoned past its budget with nothing
+visible went on to die at the output cap. The reasoning watchdog
+(`RunPolicy::reasoning_watchdog`, default `RequestBudget`) ends such a call at
+the budget instead, dropping the stream, and hands the loop the same
+`finish_reason = length`, no-content response the cap would have produced, so
+the recovery above runs after a fraction of the wait
+(`AgentEvent::ControlApplied`, `reasoning_watchdog`). Visible text or a
+tool-call fragment disarms it; unary calls are not bounded.
+
 A provider can also end a stream normally after emitting only reasoning, with
 no visible text or tool call. Hosts may set
 `RunPolicy::empty_response_retries` to retry that non-truncated blank result;
