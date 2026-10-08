@@ -442,15 +442,19 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // to "the model produced an empty final answer".
                 // A deferred run (A2) is resumable for the same reason.
                 let paused = terminal.run.paused.is_some() || terminal.run.deferred.is_some();
-                let failed = terminal
-                    .run
-                    .terminal
-                    .as_ref()
-                    .is_some_and(|outcome| outcome.class == TerminalClass::Failure);
+                // Only `Success` is a completion and `Suspended` is handled by
+                // `paused`; Failure, Timeout and Cancellation outcomes recorded
+                // by middleware on an `Ok` return must not read as completed.
+                let failed = terminal.run.terminal.as_ref().is_some_and(|outcome| {
+                    !matches!(
+                        outcome.class,
+                        TerminalClass::Success | TerminalClass::Suspended
+                    )
+                });
                 if paused {
                     status.mark_interrupted();
                 } else if failed {
-                    status.mark_failed("run ended with a failure terminal outcome".to_string());
+                    status.mark_failed("run ended with a non-success terminal outcome".to_string());
                 } else {
                     status.mark_completed();
                 }

@@ -281,3 +281,33 @@ async fn after_agent_middleware_can_read_the_terminal_outcome() {
         Some(TerminalReason::Completed)
     );
 }
+
+#[tokio::test]
+async fn a_timeout_outcome_set_by_middleware_on_an_ok_return_is_not_completed() {
+    use crate::ids::ExecutionStatus;
+    use crate::middleware::{AgentRun, Middleware};
+    struct ForceTimeout;
+    #[async_trait]
+    impl Middleware<(), ()> for ForceTimeout {
+        fn name(&self) -> &str {
+            "force_timeout"
+        }
+        async fn after_agent(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            run: &mut AgentRun,
+        ) -> crate::error::Result<()> {
+            run.terminal = Some(TerminalOutcome::new(TerminalReason::Timeout, "deadline"));
+            Ok(())
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_middleware(Arc::new(ForceTimeout));
+    let ctx = RunContext::new(RunConfig::new("to"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("hi")])
+        .await;
+    assert!(partial.error.is_none());
+    assert_eq!(partial.status.status, ExecutionStatus::Failed);
+}
