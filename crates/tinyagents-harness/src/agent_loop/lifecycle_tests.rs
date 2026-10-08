@@ -245,6 +245,48 @@ async fn queued_message_applied_carries_the_applied_messages() {
     assert!(lifecycle(&events).contains(&"message:3:user".to_string()));
 }
 
+#[tokio::test]
+async fn mixed_capture_keeps_one_payload_slot_per_applied_message() {
+    // `tool_io` only: the queued user message is not captured, the tool one is.
+    let harness = harness(
+        vec![tool_turn(&["a"]), response(vec![], "done")],
+        PayloadCapture {
+            model_io: false,
+            tool_io: true,
+            ..PayloadCapture::none()
+        },
+    );
+    let queue = Arc::new(RunQueue::new());
+    queue
+        .push(QueueLane::Steer, Message::user("uncaptured"))
+        .await;
+    queue
+        .push(QueueLane::Steer, Message::tool("t1", "captured"))
+        .await;
+    let recorder = EventRecorder::new();
+    let ctx = RunContext::new(RunConfig::new("mixed"), ())
+        .with_events(recorder.sink())
+        .with_run_queue(Arc::clone(&queue));
+    harness
+        .invoke_in_context(&(), ctx, vec![Message::user("go")])
+        .await
+        .unwrap();
+    let messages = recorder
+        .events()
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::QueuedMessageApplied { messages, .. } => Some(messages.clone()),
+            _ => None,
+        })
+        .expect("queue applied");
+    assert_eq!(messages.len(), 2, "one slot per applied message");
+    assert!(messages[0].is_null());
+    assert_eq!(
+        messages[1],
+        serde_json::to_value(Message::tool("t1", "captured")).unwrap()
+    );
+}
+
 // ── Transcript mirroring ────────────────────────────────────────────────────
 
 /// Folds the lifecycle events into a role list the way a consumer mirroring
