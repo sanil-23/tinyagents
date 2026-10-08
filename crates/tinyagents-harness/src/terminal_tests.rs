@@ -61,7 +61,7 @@ fn run_deadline_carries_phase_and_provider_started() {
 fn call_timeout_is_a_provider_timeout() {
     let o = TerminalOutcome::from_error(
         &TinyAgentsError::CallTimeout("wedged".into()),
-        TimeoutPhase::BeforeProvider,
+        TimeoutPhase::Provider,
     );
     assert_eq!(
         o.reason,
@@ -69,7 +69,7 @@ fn call_timeout_is_a_provider_timeout() {
     );
     assert_eq!(o.class, TerminalClass::Timeout);
     assert_eq!(o.timeout_phase, Some(TimeoutPhase::Provider));
-    assert!(o.provider_started, "a call timeout means a call started");
+    assert!(o.provider_started, "a call timeout inside a call means it started");
 }
 
 #[test]
