@@ -1310,6 +1310,7 @@ async fn truncated_empty_retry_yields_to_the_clock() {
     harness.register_model("mock", model as _);
     harness.with_policy(RunPolicy {
         limits: RunLimits::default().with_max_wall_clock_ms(Some(1_000)),
+        truncated_empty_nudges: 0,
         ..RunPolicy::default()
     });
 
