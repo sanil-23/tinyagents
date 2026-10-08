@@ -253,7 +253,7 @@ async fn mixed_capture_keeps_one_payload_slot_per_applied_message() {
         PayloadCapture {
             model_io: false,
             tool_io: true,
-            ..PayloadCapture::none()
+            ..PayloadCapture::default()
         },
     );
     let queue = Arc::new(RunQueue::new());
