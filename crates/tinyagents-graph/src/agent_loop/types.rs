@@ -74,6 +74,7 @@ pub struct LoopState {
     /// `TerminalReason::LimitReached` instead of a plain completion.
     #[serde(default)]
     pub(crate) limit_stop: bool,
+    /// Which cap tripped when `limit_stop` is set (`None` when unknown).
     #[serde(default)]
     pub(crate) limit_kind: Option<tinyagents_harness::events::LimitKind>,
 }
