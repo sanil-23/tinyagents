@@ -555,10 +555,12 @@ where
             if matches!(
                 harness.policy().limits.behavior,
                 tinyagents_harness::limits::LimitBehavior::StopWithPartial
-            ) && matches!(error, TinyAgentsError::LimitExceeded(_)) =>
+            ) && matches!(error, TinyAgentsError::LimitExceeded(_))
+                && ctx.peek_last_limit() == Some(tinyagents_harness::events::LimitKind::ToolCalls) =>
         {
-            // Tool admission raises `LimitExceeded` only for the tool-call cap
-            // (a wall-clock expiry is `Timeout`), so the kind is known here.
+            // Only the tool-cap admission announces `LimitReached(ToolCalls)`
+            // (and `record_tool_call` cleared any earlier kind first), so a
+            // `LimitExceeded` raised by middleware is not a partial stop.
             loop_state.limit_stop = true;
             loop_state.limit_kind = Some(tinyagents_harness::events::LimitKind::ToolCalls);
             loop_state.finished = true;
