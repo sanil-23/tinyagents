@@ -355,3 +355,36 @@ async fn an_after_model_timeout_is_classified_after_the_provider_call() {
     assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::AfterTurn));
     assert!(outcome.provider_started);
 }
+
+#[tokio::test]
+async fn a_wrap_model_rejection_before_dispatch_does_not_claim_the_provider_started() {
+    use crate::middleware::{
+        MiddlewareModelOutcome, ModelHandler, ModelMiddleware,
+    };
+    struct Reject;
+    #[async_trait]
+    impl ModelMiddleware<(), ()> for Reject {
+        fn name(&self) -> &str {
+            "reject"
+        }
+        async fn wrap_model(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            _: ModelRequest,
+            _: ModelHandler<'_, (), ()>,
+        ) -> crate::error::Result<MiddlewareModelOutcome> {
+            Err(TinyAgentsError::Timeout("rejected before dispatch".into()))
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_model_middleware(Arc::new(Reject));
+    let ctx = RunContext::new(RunConfig::new("rej"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("hi")])
+        .await;
+    assert!(partial.error.is_some());
+    let outcome = partial.run.terminal.expect("outcome");
+    assert!(!outcome.provider_started);
+    assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::BeforeProvider));
+}

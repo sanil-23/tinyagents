@@ -472,8 +472,14 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // and `provider_started`: an unfinished model call leaves
                 // `active_model_call` set, a completed one has bumped the
                 // run's call counter.
-                let site = if ctx.active_model_call.is_some() || ctx.model_call_failed() {
+                // A failure inside the model-call layer is `Provider` only if
+                // the provider was actually dispatched; a wrap middleware that
+                // rejected the call first never reached it.
+                let in_model_call = ctx.active_model_call.is_some() || ctx.model_call_failed();
+                let site = if in_model_call && ctx.provider_started() {
                     TimeoutPhase::Provider
+                } else if in_model_call {
+                    TimeoutPhase::BeforeProvider
                 } else if terminal.run.model_calls > 0 {
                     TimeoutPhase::AfterTurn
                 } else {

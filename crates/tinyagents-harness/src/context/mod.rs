@@ -834,7 +834,9 @@ impl<Ctx> RunContext<Ctx> {
             .take()
     }
 
-    pub(crate) fn mark_provider_started(&mut self) {
+    /// Records that a provider call was dispatched. Called by the model base
+    /// call of each loop driver immediately before it reaches the provider.
+    pub fn mark_provider_started(&mut self) {
         self.provider_started = true;
     }
 
@@ -848,6 +850,7 @@ impl<Ctx> RunContext<Ctx> {
         self.model_call_failed
     }
 
+    /// Whether any provider call has been dispatched during this run.
     pub fn provider_started(&self) -> bool {
         self.provider_started
     }

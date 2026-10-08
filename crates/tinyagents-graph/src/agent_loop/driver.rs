@@ -239,7 +239,7 @@ where
             }
             Err(error) => Some(TerminalOutcome::from_error(
                 error,
-                if ctx.model_call_failed() {
+                if ctx.model_call_failed() && ctx.provider_started() {
                     tinyagents_harness::terminal::TimeoutPhase::Provider
                 } else if ctx.provider_started() {
                     tinyagents_harness::terminal::TimeoutPhase::AfterTurn

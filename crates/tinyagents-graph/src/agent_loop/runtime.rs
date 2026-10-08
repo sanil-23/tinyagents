@@ -116,11 +116,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> ModelBaseCall<State, Ctx>
 {
     fn call<'a>(
         &'a self,
-        _ctx: &'a mut RunContext<Ctx>,
+        ctx: &'a mut RunContext<Ctx>,
         state: &'a State,
         request: ModelRequest,
     ) -> BoxModelFuture<'a> {
         Box::pin(async move {
+            // Reached only when the wrap onion elected to call the provider.
+            ctx.mark_provider_started();
             self.model
                 .invoke(state, request)
                 .await
