@@ -794,3 +794,32 @@ async fn a_failing_after_agent_on_a_successful_run_records_a_failure_outcome() {
         assert_eq!(outcome.class, TerminalClass::Failure, "{execution:?}");
     }
 }
+
+/// Under `LimitBehavior::Error` the graph engine's tool-cap failure still
+/// carries the concrete `ToolCalls` kind on the partial run's outcome.
+#[tokio::test]
+async fn graph_tool_cap_error_carries_the_tool_calls_kind() {
+    use tinyagents_harness::events::LimitKind;
+    use tinyagents_harness::limits::RunLimits;
+    use tinyagents_harness::terminal::TerminalReason;
+
+    let model = Arc::new(MockModel::with_tool_call("spin", serde_json::json!({})));
+    let mut harness = harness_for(LoopExecution::Graph, model);
+    harness.register_tool(Arc::new(tinyagents_harness::testkit::FakeTool::returning(
+        "spin", "again",
+    )));
+    harness.with_policy(RunPolicy {
+        execution: LoopExecution::Graph,
+        limits: RunLimits::default().with_max_tool_calls(1),
+        ..RunPolicy::default()
+    });
+    let ctx = RunContext::new(tinyagents_harness::context::RunConfig::new("cap"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("go")])
+        .await;
+    assert!(partial.error.is_some());
+    assert_eq!(
+        partial.run.terminal.expect("outcome").reason,
+        TerminalReason::LimitReached(Some(LimitKind::ToolCalls))
+    );
+}

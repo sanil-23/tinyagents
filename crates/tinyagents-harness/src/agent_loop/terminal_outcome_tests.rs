@@ -457,4 +457,37 @@ async fn a_later_call_rejected_before_dispatch_is_not_a_provider_phase_failure()
     assert!(partial.error.is_some());
     let outcome = partial.run.terminal.expect("outcome");
     assert_eq!(outcome.timeout_phase, Some(TimeoutPhase::BeforeProvider));
+    assert!(
+        outcome.provider_started,
+        "an earlier call reached the provider"
+    );
+}
+
+#[tokio::test]
+async fn a_suspended_outcome_set_by_middleware_is_interrupted_not_completed() {
+    use crate::ids::ExecutionStatus;
+    use crate::middleware::{AgentRun, Middleware};
+    struct Suspend;
+    #[async_trait]
+    impl Middleware<(), ()> for Suspend {
+        fn name(&self) -> &str {
+            "suspend"
+        }
+        async fn after_agent(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            run: &mut AgentRun,
+        ) -> crate::error::Result<()> {
+            run.terminal = Some(TerminalOutcome::new(TerminalReason::Paused, "hold"));
+            Ok(())
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.push_middleware(Arc::new(Suspend));
+    let ctx = RunContext::new(RunConfig::new("susp"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("hi")])
+        .await;
+    assert_eq!(partial.status.status, ExecutionStatus::Interrupted);
 }
