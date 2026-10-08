@@ -769,3 +769,28 @@ async fn a_failing_after_agent_keeps_the_original_error_in_both_engines() {
         );
     }
 }
+
+/// A failing `after_agent` hook on an otherwise successful run is the surfaced
+/// error, so the partial run's terminal outcome must be that failure rather
+/// than the stale completion recorded before the hook ran.
+#[tokio::test]
+async fn a_failing_after_agent_on_a_successful_run_records_a_failure_outcome() {
+    use tinyagents_harness::terminal::{TerminalClass, TerminalReason};
+
+    for execution in [LoopExecution::Direct, LoopExecution::Graph] {
+        let model = Arc::new(MockModel::with_responses(vec![ModelResponse::assistant(
+            "fine",
+        )]));
+        let mut harness = harness_for(execution, model);
+        harness.push_middleware(Arc::new(FailingAfterAgent));
+        let ctx = RunContext::new(tinyagents_harness::context::RunConfig::new("aa"), ());
+        let partial = harness
+            .invoke_in_context_collecting_partial(&(), ctx, vec![Message::user("go")])
+            .await;
+        let error = partial.error.expect("the hook error surfaces");
+        assert!(error.to_string().contains("cleanup boom"), "{execution:?}");
+        let outcome = partial.run.terminal.expect("terminal outcome");
+        assert_ne!(outcome.reason, TerminalReason::Completed, "{execution:?}");
+        assert_eq!(outcome.class, TerminalClass::Failure, "{execution:?}");
+    }
+}
