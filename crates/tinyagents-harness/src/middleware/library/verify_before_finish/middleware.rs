@@ -99,11 +99,21 @@ impl VerifyBeforeFinishMiddleware {
         if !response.tool_calls().is_empty() {
             return Some("not_final");
         }
+        // Truncation first: a reasoning model that spends its whole output
+        // budget on the hidden channel returns `length` with no text at all.
+        // Reported as `empty_answer` that reads like the model declining to
+        // answer; it is a call that produced nothing after running out of
+        // room, and the two call for different responses from whoever reads
+        // the log.
+        if crate::finish_reason::is_length_stop(response.finish_reason.as_deref()) {
+            return Some(if response.text().trim().is_empty() {
+                "truncated_before_any_output"
+            } else {
+                "truncated"
+            });
+        }
         if response.text().trim().is_empty() {
             return Some("empty_answer");
-        }
-        if crate::finish_reason::is_length_stop(response.finish_reason.as_deref()) {
-            return Some("truncated");
         }
         if response.continue_turn.is_some() {
             return Some("already_continued");
