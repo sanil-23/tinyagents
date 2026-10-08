@@ -491,3 +491,40 @@ async fn a_suspended_outcome_set_by_middleware_is_interrupted_not_completed() {
         .await;
     assert_eq!(partial.status.status, ExecutionStatus::Interrupted);
 }
+
+#[tokio::test]
+async fn a_cache_hit_followed_by_an_after_model_error_does_not_claim_the_provider() {
+    use crate::cache::InMemoryResponseCache;
+    use crate::middleware::Middleware;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct FailSecond(AtomicUsize);
+    #[async_trait]
+    impl Middleware<(), ()> for FailSecond {
+        fn name(&self) -> &str {
+            "fail_second"
+        }
+        async fn after_model(
+            &self,
+            _: &mut RunContext<()>,
+            _: &(),
+            _: &mut ModelResponse,
+        ) -> crate::error::Result<()> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err(TinyAgentsError::Timeout("late".into()))
+            }
+        }
+    }
+    let mut harness = harness_with(Arc::new(ScriptedModel::new(vec![response(vec![], "done")])));
+    harness.with_response_cache(Arc::new(InMemoryResponseCache::new()));
+    harness.push_middleware(Arc::new(FailSecond(AtomicUsize::new(0))));
+    let input = vec![Message::user("same request")];
+    harness.invoke_default(&(), input.clone()).await.unwrap();
+    let ctx = RunContext::new(RunConfig::new("cachehit"), ());
+    let partial = harness
+        .invoke_in_context_collecting_partial(&(), ctx, input)
+        .await;
+    assert!(partial.error.is_some());
+    assert!(!partial.run.terminal.expect("outcome").provider_started);
+}
