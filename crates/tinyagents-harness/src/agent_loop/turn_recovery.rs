@@ -78,6 +78,10 @@ impl TruncatedRetryPlan {
     fn expected_ms(&self) -> u64 {
         match (self.ms_per_token(), self.next) {
             (Some(rate), Some(next)) => (rate * next as f64) as u64,
+            (None, Some(next)) if self.current.is_some_and(|current| current > 0) => {
+                let current = self.current.unwrap_or_default();
+                (self.dead_ms as f64 * next as f64 / current as f64) as u64
+            }
             _ => self.dead_ms,
         }
     }

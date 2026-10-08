@@ -92,6 +92,21 @@ fn uncapped_nudge_uses_the_dead_call_duration_as_its_clock_estimate() {
 }
 
 #[test]
+fn retry_clock_estimate_scales_with_the_candidate_cap_without_usage() {
+    let plan = TruncatedRetryPlan {
+        current: Some(4_000),
+        next: Some(8_000),
+        base: Some(4_000),
+        dead_tokens: 0,
+        dead_ms: 1_000,
+        remaining: Some(std::time::Duration::from_millis(10_000)),
+        first_retry: false,
+    };
+
+    assert_eq!(plan.expected_ms(), 2_000);
+}
+
+#[test]
 fn reset_truncated_empty_clears_only_the_truncated_empty_state() {
     let mut recovery = spent();
     recovery.reset_truncated_empty();
