@@ -259,10 +259,7 @@ where
                 // A failed summarizer already received a provider response, though
                 // summarizer calls bypass the context's dispatch marker.
                 outcome.provider_started = ctx.provider_started()
-                    || matches!(
-                        error_ref,
-                        TinyAgentsError::SummarizationUsage { .. }
-                    );
+                    || matches!(error, TinyAgentsError::SummarizationUsage { .. });
                 Some(outcome)
             }
         };

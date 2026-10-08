@@ -556,7 +556,8 @@ where
                 harness.policy().limits.behavior,
                 tinyagents_harness::limits::LimitBehavior::StopWithPartial
             ) && matches!(error, TinyAgentsError::LimitExceeded(_))
-                && ctx.peek_last_limit() == Some(tinyagents_harness::events::LimitKind::ToolCalls) =>
+                && ctx.peek_last_limit()
+                    == Some(tinyagents_harness::events::LimitKind::ToolCalls) =>
         {
             // Only the tool-cap admission announces `LimitReached(ToolCalls)`
             // (and `record_tool_call` cleared any earlier kind first), so a

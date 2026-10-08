@@ -823,3 +823,48 @@ async fn graph_tool_cap_error_carries_the_tool_calls_kind() {
         TerminalReason::LimitReached(Some(LimitKind::ToolCalls))
     );
 }
+
+struct LimitFromHook;
+
+#[async_trait::async_trait]
+impl tinyagents_harness::middleware::Middleware<(), ()> for LimitFromHook {
+    fn name(&self) -> &str {
+        "limit_from_hook"
+    }
+
+    async fn before_tool(
+        &self,
+        _ctx: &mut RunContext<()>,
+        _state: &(),
+        _call: &mut tinyinference_llm::tool::ToolCall,
+    ) -> tinyagents_harness::Result<()> {
+        Err(TinyAgentsError::LimitExceeded("policy budget".into()))
+    }
+}
+
+/// A `LimitExceeded` raised by middleware is not the tool-call cap, so under
+/// `StopWithPartial` it must fail the run in both engines instead of becoming
+/// a partial stop labeled `ToolCalls`.
+#[tokio::test]
+async fn a_middleware_limit_error_is_not_a_tool_cap_partial_stop() {
+    use tinyagents_harness::limits::{LimitBehavior, RunLimits};
+
+    for execution in [LoopExecution::Direct, LoopExecution::Graph] {
+        let model = Arc::new(MockModel::with_tool_call("spin", serde_json::json!({})));
+        let mut harness = harness_for(execution, model);
+        harness.register_tool(Arc::new(tinyagents_harness::testkit::FakeTool::returning(
+            "spin", "again",
+        )));
+        harness.push_middleware(Arc::new(LimitFromHook));
+        harness.with_policy(RunPolicy {
+            execution,
+            limits: RunLimits::default().with_behavior(LimitBehavior::StopWithPartial),
+            ..RunPolicy::default()
+        });
+        let result = harness.invoke_default(&(), vec![Message::user("go")]).await;
+        assert!(
+            matches!(result, Err(TinyAgentsError::LimitExceeded(_))),
+            "{execution:?}: {result:?}"
+        );
+    }
+}

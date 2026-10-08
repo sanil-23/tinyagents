@@ -501,10 +501,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                 // A failed summarizer already received a provider response, though
                 // summarizer calls bypass the context's dispatch marker.
                 outcome.provider_started = ctx.provider_started()
-                    || matches!(
-                        error_ref,
-                        TinyAgentsError::SummarizationUsage { .. }
-                    );
+                    || matches!(&error, TinyAgentsError::SummarizationUsage { .. });
                 terminal.run.terminal = Some(outcome.clone());
                 let record = ctx.emit(AgentEvent::RunFailed {
                     run_id,
