@@ -338,9 +338,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             let retry_was_skipped_for_clock = truncated_retry
                 .as_ref()
                 .is_some_and(|plan| !plan.fits_clock());
+            let retry_was_skipped_at_ceiling = truncated_retry
+                .as_ref()
+                .is_some_and(|plan| !plan.first_retry && !plan.cap_grows());
             let repeat_cap = (turn_recovery.truncated_empty_nudges_used > 1
                 || clock_only_nudge
-                || retry_was_skipped_for_clock)
+                || retry_was_skipped_for_clock
+                || retry_was_skipped_at_ceiling)
                 .then(|| truncated_retry.as_ref().and_then(|plan| plan.nudge_cap()))
                 .flatten();
             if let Some(cap) = repeat_cap {

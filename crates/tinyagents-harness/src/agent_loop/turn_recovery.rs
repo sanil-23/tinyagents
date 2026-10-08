@@ -67,7 +67,7 @@ impl TruncatedRetryPlan {
 
     /// The retry can grow the cap, or the call never had one (a plain retry of
     /// an uncapped call is still worth one attempt: the failure is stochastic).
-    fn cap_grows(&self) -> bool {
+    pub(super) fn cap_grows(&self) -> bool {
         match (self.current, self.next) {
             (Some(current), Some(next)) => next > current,
             _ => true,

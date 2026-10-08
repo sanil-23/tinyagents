@@ -1227,7 +1227,7 @@ async fn truncated_empty_retry_stops_at_the_cap_ceiling_and_nudges() {
     let sent: Vec<Option<u32>> = model.requests().iter().map(|r| r.max_tokens).collect();
     assert_eq!(
         sent,
-        vec![Some(2048), Some(2048), Some(4096), Some(8192), Some(8192)]
+        vec![Some(2048), Some(2048), Some(4096), Some(8192), Some(4096)]
     );
     let last = model
         .requests()
@@ -1237,8 +1237,8 @@ async fn truncated_empty_retry_stops_at_the_cap_ceiling_and_nudges() {
         .clone();
     assert_eq!(
         last.last().map(|m| m.text()),
-        Some(super::run_loop::TRUNCATED_EMPTY_ANSWER_NUDGE.to_string()),
-        "the fifth call carries the nudge rather than a bare re-send"
+        Some("Your reply was cut off again before any tool call or answer. The output limit for the next call is 4096 tokens: reason in a few sentences at most, then act: write a short answer from what you already have.".to_string()),
+        "the fifth call carries the nudge at a reduced cap rather than a bare re-send"
     );
     let skipped: Vec<String> = recorder
         .events()
