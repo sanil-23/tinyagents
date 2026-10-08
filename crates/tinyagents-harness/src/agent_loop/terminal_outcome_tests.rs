@@ -358,9 +358,7 @@ async fn an_after_model_timeout_is_classified_after_the_provider_call() {
 
 #[tokio::test]
 async fn a_wrap_model_rejection_before_dispatch_does_not_claim_the_provider_started() {
-    use crate::middleware::{
-        MiddlewareModelOutcome, ModelHandler, ModelMiddleware,
-    };
+    use crate::middleware::{MiddlewareModelOutcome, ModelHandler, ModelMiddleware};
     struct Reject;
     #[async_trait]
     impl ModelMiddleware<(), ()> for Reject {
