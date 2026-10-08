@@ -635,6 +635,22 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             {
                 request.reasoning = Some(mapped.clone());
             }
+            // A dead call earlier in the run switched reasoning off for the
+            // next few calls (see `RunPolicy::truncated_empty_reasoning_fallback`).
+            // Applied last so it wins over the policy default and the profile
+            // mapping: those describe the effort the run wants, this is the
+            // one the transcript can get past.
+            if self.policy.truncated_empty_reasoning_fallback
+                && let Some(previous) = turn_recovery.reasoning_fallback.apply(&mut request)
+            {
+                tracing::info!(
+                    target: "tinyagents::agent_loop",
+                    run_id = %ctx.run_id(),
+                    holdoff = turn_recovery.reasoning_fallback.holdoff(),
+                    previous_effort = ?previous.as_ref().and_then(|r| r.effort),
+                    "[agent_loop] reasoning switched off for this call after a dead call"
+                );
+            }
 
             // Resolve the structured-output plan against the resolved model (see
             // `structured_plan.rs`); the plan drives extraction of the final
@@ -1460,6 +1476,19 @@ pub(super) const TRUNCATED_EMPTY_TOOL_NUDGE: &str = "Your last reply ran out of 
 pub(super) const TRUNCATED_EMPTY_ANSWER_NUDGE: &str = "Your last reply ran out of output tokens while \
      reasoning and produced no answer. Stop deliberating and write a short answer now from \
      what you already have.";
+
+/// Added to a truncated-empty nudge when the next call goes out with
+/// reasoning switched off (`RunPolicy::truncated_empty_reasoning_fallback`)
+/// and tools are callable: the deliberation the model cannot finish in its
+/// head goes into the workspace instead.
+pub(super) const TRUNCATED_EMPTY_REASONING_OFF_TOOL_NOTE: &str = "Reasoning is switched off for \
+    your next call(s): do the working-out in the workspace instead. Write the plan, the \
+    derivation or the candidate answer to a scratch file, test it with a small command, and \
+    move one step per call.";
+
+/// The same note for a turn with no callable tool.
+pub(super) const TRUNCATED_EMPTY_REASONING_OFF_ANSWER_NOTE: &str = "Reasoning is switched off \
+    for your next call(s): answer directly from what you already have, in a few sentences.";
 
 /// The re-prompt sent when a text-dialect tool-call block could not be
 /// decoded: no tool ran, and the model should know why rather than assume

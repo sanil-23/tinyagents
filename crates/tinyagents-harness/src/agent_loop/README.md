@@ -172,6 +172,17 @@ allowed call ends on the blank reply instead of failing with
 `0` to restore exact-replay behavior. The recovery lives in the shared
 `run_loop`, so it applies identically to the unary and streaming paths.
 
+Neither a smaller cap nor a lower effort label reliably stops a hosted model
+that deliberates past its cap; `reasoning.effort = none` does. So after a dead
+call the retry or nudged call goes out with reasoning switched off
+(`RunPolicy::truncated_empty_reasoning_fallback`, default `true`), at the same
+cap (the cap was for the deliberation), and the nudge tells the model to do its
+working-out in the workspace. The hold-off backs off per death (1, 2, 4, 8 live
+calls without reasoning) and the configured effort returns once it is spent;
+the switch is announced as `AgentEvent::ControlApplied` (`reasoning_fallback`).
+The state is run-wide (`agent_loop/reasoning_fallback.rs`): it outlives the
+turn that set it.
+
 A provider can also end a stream normally after emitting only reasoning, with
 no visible text or tool call. Hosts may set
 `RunPolicy::empty_response_retries` to retry that non-truncated blank result;

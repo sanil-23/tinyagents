@@ -351,6 +351,24 @@ pub struct RunPolicy {
     /// Defaults to `1`. Set to `0` (together with `truncated_empty_retries =
     /// 0`) for exact-replay callers that must not re-issue a call.
     pub truncated_empty_nudges: u32,
+    /// After a truncated-empty completion, send the retry or nudged call with
+    /// reasoning switched off (`reasoning.effort = none`).
+    ///
+    /// On the hosted providers measured (deepseek-v4.1-flash through
+    /// OpenRouter's routable backends) neither a smaller output cap nor a
+    /// lower effort label stops a model that deliberates past its cap: one
+    /// task died nine times in a row at caps from 65k down to 2k, and at
+    /// `medium` effort 11 of 25 calls still died. `effort = none` was the one
+    /// control that produced zero reasoning tokens. So the step is re-issued
+    /// without reasoning, and the model has to act from what it already
+    /// knows; the nudge tells it to do its working-out in the workspace. The
+    /// hold-off backs off (1, 2, 4, 8 live calls without reasoning) so a model
+    /// that keeps dying on this transcript spends less of the run proving it,
+    /// and reasoning returns once the hold-off is spent.
+    ///
+    /// Defaults to `true`. A caller that must keep every call at the
+    /// configured effort sets it to `false`.
+    pub truncated_empty_reasoning_fallback: bool,
     /// Automatic retries for a completion with no visible text, tool calls, or
     /// structured output when the provider did not report length truncation.
     /// Reasoning-only `stop` responses are one example: the model spent tokens
@@ -663,6 +681,10 @@ impl Default for RunPolicy {
             // keeps deliberating; one plain "stop and act" re-prompt recovers
             // the step instead of ending the run on a blank reply.
             truncated_empty_nudges: 1,
+            // A dead call at any cap or effort is evidence that this
+            // transcript does not get past the model's reasoning; the next
+            // call goes out without it.
+            truncated_empty_reasoning_fallback: true,
             empty_response_retries: 0,
             reject_truncated_tool_calls: true,
             truncated_tool_call_retries: 2,
