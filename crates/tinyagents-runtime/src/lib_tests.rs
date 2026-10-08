@@ -4307,6 +4307,7 @@ async fn driver_failures_deliver_their_typed_outcome_before_the_terminal() {
             TurnOptions::default(),
         )
         .await;
+    wait_for_outcomes(&hook, 1).await;
     let outcomes = hook.outcomes.lock().unwrap();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].class, TerminalClass::Failure);
@@ -4368,9 +4369,7 @@ async fn a_drivers_typed_success_outcome_is_not_flattened_to_completed() {
         )
         .await
         .unwrap();
-    for _ in 0..5 {
-        wait_for_outcomes(&hook, 1).await;
-    }
+    wait_for_outcomes(&hook, 1).await;
     let outcomes = hook.outcomes.lock().unwrap();
     assert_eq!(outcomes.as_slice(), [capped]);
     assert_ne!(outcomes[0].reason, TerminalReason::Completed);
