@@ -57,6 +57,13 @@ pub enum AgentEvent {
 }
 ```
 
+`outcome` on `RunCompleted` / `RunFailed` is a typed `TerminalOutcome` (a
+`reason`, a coarse `class`, `provider_started`, and a `timeout_phase` for
+timeouts). It is `Some` for every run this crate ends and `None` only when
+replaying journals written before the field existed. The reason mapping,
+lifecycle events and `MessageRetracted` / `TranscriptRewritten` semantics are in
+[terminal outcome and turn lifecycle](terminal-outcome.md).
+
 Streaming modes:
 
 - `messages`: model deltas and final messages
