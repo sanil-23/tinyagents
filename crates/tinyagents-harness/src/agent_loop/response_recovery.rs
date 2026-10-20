@@ -297,7 +297,13 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
                     .map(std::time::Duration::from_millis),
             )
             .map(|clock| clock.remaining());
-            turn_recovery.truncated_retry_plan(attempt_max_tokens, dead_tokens, dead_ms, remaining)
+            turn_recovery.truncated_retry_plan(
+                attempt_max_tokens,
+                dead_tokens,
+                dead_ms,
+                remaining,
+                self.policy.truncated_empty_constant_cap,
+            )
         });
         if truncated_empty
             && turn_recovery.truncated_empty_retries_used < self.policy.truncated_empty_retries

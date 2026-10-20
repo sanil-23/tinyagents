@@ -49,6 +49,7 @@ fn nudge_cap_is_clamped_to_the_clock_affordable_cap() {
         dead_ms: 16_000,
         remaining: Some(std::time::Duration::from_millis(6_000)),
         first_retry: false,
+        constant_cap: false,
     };
 
     assert_eq!(plan.affordable_cap(), Some(3_000));
@@ -66,6 +67,7 @@ fn nudge_is_rejected_when_even_the_minimum_cap_exceeds_the_clock_budget() {
         dead_ms: 4_096,
         remaining: Some(std::time::Duration::from_millis(2_000)),
         first_retry: false,
+        constant_cap: false,
     };
 
     assert_eq!(plan.affordable_cap(), None);
@@ -83,6 +85,7 @@ fn uncapped_nudge_uses_the_dead_call_duration_as_its_clock_estimate() {
         dead_ms: 1_000,
         remaining: Some(std::time::Duration::from_millis(3_000)),
         first_retry: false,
+        constant_cap: false,
     };
     let too_little_time = TruncatedRetryPlan {
         remaining: Some(std::time::Duration::from_millis(1_000)),
@@ -103,6 +106,7 @@ fn retry_clock_estimate_scales_with_the_candidate_cap_without_usage() {
         dead_ms: 1_000,
         remaining: Some(std::time::Duration::from_millis(10_000)),
         first_retry: false,
+        constant_cap: false,
     };
 
     assert_eq!(plan.expected_ms(), 2_000);
@@ -151,4 +155,39 @@ fn reset_after_final_clears_everything() {
     let mut recovery = spent();
     recovery.reset_after_final();
     assert_eq!(recovery, TurnRecovery::default());
+}
+
+#[test]
+fn a_constant_cap_retries_at_the_same_cap_every_time() {
+    let mut recovery = TurnRecovery::default();
+    let first = recovery.truncated_retry_plan(Some(131_072), 131_072, 600_000, None, true);
+    assert_eq!(first.next, Some(131_072));
+    recovery.take_truncated_retry(Some(131_072), &first);
+
+    let second = recovery.truncated_retry_plan(Some(131_072), 131_072, 600_000, None, true);
+    assert_eq!(second.next, Some(131_072), "no doubling");
+    assert!(
+        second.worth_it(),
+        "the second retry is still made at the same cap"
+    );
+
+    // The default policy doubles from the second retry.
+    let doubling = recovery.truncated_retry_plan(Some(131_072), 131_072, 600_000, None, false);
+    assert_eq!(doubling.next, Some(262_144));
+}
+
+#[test]
+fn a_constant_cap_still_respects_the_clock() {
+    let mut recovery = TurnRecovery::default();
+    let first = recovery.truncated_retry_plan(Some(131_072), 131_072, 600_000, None, true);
+    recovery.take_truncated_retry(Some(131_072), &first);
+    // 600 s at the dead call's rate, with only 900 s left: more than half.
+    let late = recovery.truncated_retry_plan(
+        Some(131_072),
+        131_072,
+        600_000,
+        Some(std::time::Duration::from_secs(900)),
+        true,
+    );
+    assert!(!late.worth_it());
 }

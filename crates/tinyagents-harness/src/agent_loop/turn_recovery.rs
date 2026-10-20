@@ -56,6 +56,9 @@ pub(super) struct TruncatedRetryPlan {
     pub(super) remaining: Option<std::time::Duration>,
     /// The first retry of this turn re-sends at the same cap on purpose.
     pub(super) first_retry: bool,
+    /// Every retry re-sends at the same cap
+    /// ([`RunPolicy::truncated_empty_constant_cap`](crate::runtime::RunPolicy::truncated_empty_constant_cap)).
+    pub(super) constant_cap: bool,
 }
 
 impl TruncatedRetryPlan {
@@ -99,11 +102,11 @@ impl TruncatedRetryPlan {
     }
 
     pub(super) fn worth_it(&self) -> bool {
-        (self.first_retry || self.cap_grows()) && self.fits_clock()
+        (self.first_retry || self.constant_cap || self.cap_grows()) && self.fits_clock()
     }
 
     pub(super) fn skip_reason(&self) -> String {
-        if !self.first_retry && !self.cap_grows() {
+        if !self.first_retry && !self.constant_cap && !self.cap_grows() {
             format!(
                 "the output cap is already at its ceiling ({}); re-sending the same transcript at the same cap fails the same way",
                 self.current.map_or("unset".to_string(), |c| c.to_string())
@@ -188,6 +191,7 @@ impl TurnRecovery {
         dead_tokens: u64,
         dead_ms: u64,
         remaining: Option<std::time::Duration>,
+        constant_cap: bool,
     ) -> TruncatedRetryPlan {
         let first_retry = self.truncated_empty_retries_used == 0;
         let current = self.boosted_max_tokens.or(attempt_max_tokens);
@@ -195,7 +199,7 @@ impl TurnRecovery {
         let next = attempt_max_tokens.map(|sent| {
             let base = self.truncation_base.unwrap_or(sent);
             let current = self.boosted_max_tokens.unwrap_or(sent);
-            if first_retry {
+            if first_retry || constant_cap {
                 current
             } else {
                 current.saturating_mul(2).min(base.saturating_mul(4))
@@ -209,6 +213,7 @@ impl TurnRecovery {
             dead_ms,
             remaining,
             first_retry,
+            constant_cap,
         }
     }
 
