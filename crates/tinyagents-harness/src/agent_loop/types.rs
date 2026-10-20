@@ -134,6 +134,12 @@ pub(super) struct TurnRecovery {
     /// The next request goes out with reasoning off
     /// (`RunPolicy::truncated_empty_reasoning_off`); taken by that request.
     pub(super) reasoning_off_next: bool,
+    /// Truncated-empty replies in this run so far. Unlike the counters above it
+    /// survives the per-step resets: it is what makes reasoning-off sticky.
+    pub(super) dead_calls_this_run: u32,
+    /// Every later call of the run goes out with reasoning off
+    /// (`RunPolicy::truncated_empty_reasoning_off_sticky_after`).
+    pub(super) reasoning_off_sticky: bool,
 }
 
 /// The tool schemas a run advertises and the discovery state behind them.

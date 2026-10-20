@@ -364,6 +364,16 @@ pub struct RunPolicy {
     /// to do the same on a retry at any cap; without reasoning it has to act.
     /// Defaults to `false`.
     pub truncated_empty_reasoning_off: bool,
+    /// From this many truncated-empty replies in one run on, every later call
+    /// of the run goes out with reasoning off, not just the one after each
+    /// dead call. `0` never makes it sticky.
+    ///
+    /// With [`Self::truncated_empty_reasoning_off`] alone a model that keeps
+    /// thinking to the cap acts on the reasoning-off call and then dies again
+    /// on the next one with reasoning back on: on Terminal-Bench
+    /// protein-assembly five dead calls alternated with five working ones.
+    /// Defaults to `0`.
+    pub truncated_empty_reasoning_off_sticky_after: u32,
     /// Re-prompts after [`Self::truncated_empty_retries`] are spent and the
     /// model *still* returned a truncated-empty completion.
     ///
@@ -712,6 +722,7 @@ impl Default for RunPolicy {
             truncated_empty_nudges: 1,
             truncated_empty_constant_cap: false,
             truncated_empty_reasoning_off: false,
+            truncated_empty_reasoning_off_sticky_after: 0,
             empty_response_retries: 0,
             reject_truncated_tool_calls: true,
             truncated_tool_call_retries: 2,

@@ -648,8 +648,11 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             }
             // The call after a dead one (`RunPolicy::truncated_empty_reasoning_off`)
             // goes out without reasoning, after the default and the profile
-            // mapping so neither puts it back. One call only.
-            if std::mem::take(&mut turn_recovery.reasoning_off_next) {
+            // mapping so neither puts it back. One call only, unless dead calls
+            // kept coming and reasoning-off is now sticky for the run.
+            if std::mem::take(&mut turn_recovery.reasoning_off_next)
+                || turn_recovery.reasoning_off_sticky
+            {
                 tracing::info!(
                     target: "tinyagents::agent_loop",
                     run_id = %ctx.run_id(),

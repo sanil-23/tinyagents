@@ -278,6 +278,22 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
         let truncated_empty = tool_calls.is_empty()
             && crate::finish_reason::is_length_stop(response.finish_reason.as_deref())
             && response.text().trim().is_empty();
+        if truncated_empty {
+            turn_recovery.dead_calls_this_run += 1;
+            let sticky_after = self.policy.truncated_empty_reasoning_off_sticky_after;
+            if sticky_after > 0
+                && !turn_recovery.reasoning_off_sticky
+                && turn_recovery.dead_calls_this_run >= sticky_after
+            {
+                turn_recovery.reasoning_off_sticky = true;
+                tracing::info!(
+                    target: "tinyagents::agent_loop",
+                    run_id = %ctx.run_id(),
+                    dead_calls = turn_recovery.dead_calls_this_run,
+                    "[agent_loop] dead calls keep coming; the rest of the run goes out with reasoning off"
+                );
+            }
+        }
         // What a retry would cost and whether it can change anything. The
         // dead call's own duration and output count give the rate this model
         // emits at here; the next cap divided by that rate is how long the

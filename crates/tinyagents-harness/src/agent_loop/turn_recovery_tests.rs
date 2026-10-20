@@ -13,6 +13,8 @@ fn spent() -> TurnRecovery {
         boosted_max_tokens: Some(4096),
         truncation_base: Some(1024),
         reasoning_off_next: true,
+        dead_calls_this_run: 3,
+        reasoning_off_sticky: true,
     }
 }
 
@@ -129,10 +131,19 @@ fn reset_truncated_empty_clears_only_the_truncated_empty_state() {
 }
 
 #[test]
-fn reset_after_tool_turn_clears_everything() {
+fn reset_after_tool_turn_clears_everything_but_the_run_wide_dead_call_state() {
     let mut recovery = spent();
     recovery.reset_after_tool_turn(false);
-    assert_eq!(recovery, TurnRecovery::default());
+    // The run-wide dead-call count and sticky reasoning-off survive the
+    // per-step reset: carrying them across steps is their whole job.
+    assert_eq!(
+        recovery,
+        TurnRecovery {
+            dead_calls_this_run: 3,
+            reasoning_off_sticky: true,
+            ..TurnRecovery::default()
+        }
+    );
 }
 
 #[test]
@@ -152,10 +163,19 @@ fn reset_after_a_truncated_tool_turn_keeps_the_retry_budget_and_boost() {
 }
 
 #[test]
-fn reset_after_final_clears_everything() {
+fn reset_after_final_clears_everything_but_the_run_wide_dead_call_state() {
     let mut recovery = spent();
     recovery.reset_after_final();
-    assert_eq!(recovery, TurnRecovery::default());
+    // The run-wide dead-call count and sticky reasoning-off survive the
+    // per-step reset: carrying them across steps is their whole job.
+    assert_eq!(
+        recovery,
+        TurnRecovery {
+            dead_calls_this_run: 3,
+            reasoning_off_sticky: true,
+            ..TurnRecovery::default()
+        }
+    );
 }
 
 #[test]
