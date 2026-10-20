@@ -131,6 +131,9 @@ pub(super) struct TurnRecovery {
     pub(super) boosted_max_tokens: Option<u32>,
     /// The original output cap, so growth stays clamped at 4x.
     pub(super) truncation_base: Option<u32>,
+    /// The next request goes out with reasoning off
+    /// (`RunPolicy::truncated_empty_reasoning_off`); taken by that request.
+    pub(super) reasoning_off_next: bool,
 }
 
 /// The tool schemas a run advertises and the discovery state behind them.

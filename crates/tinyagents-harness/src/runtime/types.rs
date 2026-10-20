@@ -355,6 +355,15 @@ pub struct RunPolicy {
     /// doubling: a model that reasons past 128k without answering reasons past
     /// 256k the same way, at twice the cost and time.
     pub truncated_empty_constant_cap: bool,
+    /// Make the call that follows a truncated-empty reply (a retry, or a
+    /// "stop deliberating" nudge) with reasoning switched off
+    /// ([`ReasoningEffort::None`](tinyinference_llm::model::ReasoningEffort::None)).
+    /// One call only: the call after it reasons as the policy says again.
+    ///
+    /// A reasoning model that thought to the output cap without acting tends
+    /// to do the same on a retry at any cap; without reasoning it has to act.
+    /// Defaults to `false`.
+    pub truncated_empty_reasoning_off: bool,
     /// Re-prompts after [`Self::truncated_empty_retries`] are spent and the
     /// model *still* returned a truncated-empty completion.
     ///
@@ -702,6 +711,7 @@ impl Default for RunPolicy {
             // the step instead of ending the run on a blank reply.
             truncated_empty_nudges: 1,
             truncated_empty_constant_cap: false,
+            truncated_empty_reasoning_off: false,
             empty_response_retries: 0,
             reject_truncated_tool_calls: true,
             truncated_tool_call_retries: 2,

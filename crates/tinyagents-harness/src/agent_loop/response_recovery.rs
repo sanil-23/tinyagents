@@ -316,6 +316,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             ctx.retract_transcript(messages.len());
             let plan = truncated_retry.expect("a truncated-empty reply has a plan");
             turn_recovery.take_truncated_retry(attempt_max_tokens, &plan);
+            turn_recovery.reasoning_off_next = self.policy.truncated_empty_reasoning_off;
             let record = ctx.emit(AgentEvent::RetryScheduled {
                 call_id: call_id.clone(),
                 attempt: turn_recovery.truncated_empty_retries_used as usize,
@@ -392,6 +393,7 @@ impl<State: Send + Sync, Ctx: Send + Sync> AgentHarness<State, Ctx> {
             messages.pop();
             ctx.retract_transcript(messages.len());
             turn_recovery.truncated_empty_nudges_used += 1;
+            turn_recovery.reasoning_off_next = self.policy.truncated_empty_reasoning_off;
             let retry_was_skipped_for_clock = truncated_retry
                 .as_ref()
                 .is_some_and(|plan| !plan.fits_clock());

@@ -255,6 +255,7 @@ impl TurnRecovery {
         self.truncated_empty_nudges_used = 0;
         self.boosted_max_tokens = None;
         self.truncation_base = None;
+        self.reasoning_off_next = false;
     }
 
     /// Clears the re-prompt counters (dropped, withheld, empty-response).

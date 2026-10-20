@@ -12,6 +12,7 @@ fn spent() -> TurnRecovery {
         truncated_repeat_names: ["save_workflow".to_string()].into(),
         boosted_max_tokens: Some(4096),
         truncation_base: Some(1024),
+        reasoning_off_next: true,
     }
 }
 
