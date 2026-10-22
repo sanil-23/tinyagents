@@ -305,6 +305,9 @@ impl<State: Send + Sync, Ctx: Send + Sync> MiddlewareStack<State, Ctx> {
         state: &State,
         request: &mut ModelRequest,
     ) -> Result<()> {
+        // Restore request-scoped content in registration order. Dispatch
+        // observers are registered after request rewriters, so restored state
+        // remains the final request content.
         for middleware in &self.middlewares {
             middleware.after_model_rewrite(ctx, state, request).await?;
         }
@@ -532,6 +535,22 @@ impl<State: Send + Sync, Ctx: Send + Sync> MiddlewareStack<State, Ctx> {
     ) -> Result<()> {
         run_stack_hook!(self, ctx, self.middlewares.iter().rev(), |mw| mw
             .after_tool_control(ctx, state, invocation, result))
+    }
+
+    /// Notifies middleware after host screening and outcome classification.
+    pub async fn run_after_tool_output_screened(
+        &self,
+        ctx: &mut RunContext<Ctx>,
+        state: &State,
+        invocation: &ToolInvocationIdentity,
+        result: &ToolResult,
+        model_output: &str,
+    ) -> Result<()> {
+        for mw in self.middlewares.iter() {
+            mw.after_tool_output_screened(ctx, state, invocation, result, model_output)
+                .await?;
+        }
+        Ok(())
     }
 
     /// Runs every middleware's [`Middleware::check_nested_tool`] in

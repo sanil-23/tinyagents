@@ -7,9 +7,8 @@
 use crate::goals::types::{ThreadGoal, ThreadGoalStatus};
 
 /// Renders the per-iteration context block a caller can prepend to a work
-/// node's prompt so the model knows the active objective and how to close it
-/// out. Returns `None` for statuses that should not drive further work
-/// ([`Paused`](ThreadGoalStatus::Paused) / [`Complete`](ThreadGoalStatus::Complete)).
+/// node's prompt so the model knows the objective and how to close it out.
+/// Returns `None` only for a completed goal.
 pub fn active_goal_context_block(goal: &ThreadGoal) -> Option<String> {
     match goal.status {
         ThreadGoalStatus::Active => {
@@ -30,6 +29,10 @@ pub fn active_goal_context_block(goal: &ThreadGoal) -> Option<String> {
              and stop; do not start new substantive work.\n\nGoal: {}",
             goal.objective,
         )),
-        ThreadGoalStatus::Paused | ThreadGoalStatus::Complete => None,
+        ThreadGoalStatus::Paused => Some(format!(
+            "[thread goal] This goal is paused. Read the user's message and decide whether it continues this objective. If it does, call `goal_resume`; if it starts a different task, call `goal_set`; otherwise leave the goal paused.\n\nGoal: {}",
+            goal.objective
+        )),
+        ThreadGoalStatus::Complete => None,
     }
 }

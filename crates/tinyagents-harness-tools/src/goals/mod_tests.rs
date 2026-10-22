@@ -50,7 +50,7 @@ fn budget_helpers() {
 }
 
 #[test]
-fn context_block_present_only_for_active_and_budget_limited() {
+fn context_block_covers_active_paused_and_budget_limited_goals() {
     let active = goal(ThreadGoalStatus::Active, Some(500), 100);
     let block = active_goal_context_block(&active).expect("active goal has a context block");
     assert!(block.contains("ship the release"));
@@ -61,7 +61,10 @@ fn context_block_present_only_for_active_and_budget_limited() {
     let block = active_goal_context_block(&limited).expect("budget-limited has a stop block");
     assert!(block.contains("budget"));
 
-    assert!(active_goal_context_block(&goal(ThreadGoalStatus::Paused, None, 0)).is_none());
+    let paused = active_goal_context_block(&goal(ThreadGoalStatus::Paused, None, 0))
+        .expect("paused goals explain the resume decision");
+    assert!(paused.contains("call `goal_resume`"));
+    assert!(paused.contains("leave the goal paused"));
     assert!(active_goal_context_block(&goal(ThreadGoalStatus::Complete, None, 0)).is_none());
 }
 
@@ -290,6 +293,14 @@ mod tool_tests {
             .unwrap()
     }
 
+    #[test]
+    fn model_facing_goal_tool_kinds_have_the_expected_names() {
+        let names: Vec<&str> = GoalToolKind::MODEL_FACING.map(GoalToolKind::name).into();
+        assert_eq!(
+            names,
+            vec!["goal_get", "goal_set", "goal_complete", "goal_resume"]
+        );
+    }
     #[tokio::test]
     async fn set_get_complete_via_tools_in_thread_scope() {
         let s = store();
@@ -522,10 +533,10 @@ mod budget_tests {
     }
 
     #[test]
-    fn a_guard_is_only_armed_for_an_active_goal_with_a_budget() {
+    fn a_guard_is_armed_for_active_or_paused_goals_with_a_budget() {
         assert!(GoalBudgetGuard::for_goal(&goal(ThreadGoalStatus::Active, Some(100), 0)).is_some());
         assert!(GoalBudgetGuard::for_goal(&goal(ThreadGoalStatus::Active, None, 0)).is_none());
-        assert!(GoalBudgetGuard::for_goal(&goal(ThreadGoalStatus::Paused, Some(100), 0)).is_none());
+        assert!(GoalBudgetGuard::for_goal(&goal(ThreadGoalStatus::Paused, Some(100), 0)).is_some());
         assert!(
             GoalBudgetGuard::for_goal(&goal(ThreadGoalStatus::Complete, Some(100), 0)).is_none()
         );

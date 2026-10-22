@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 
 /// Lifecycle state of a thread goal.
 ///
-/// Ownership is **asymmetric**: a model may create/replace a goal and mark it
-/// [`Complete`](ThreadGoalStatus::Complete); [`Paused`](ThreadGoalStatus::Paused)
-/// / [`BudgetLimited`](ThreadGoalStatus::BudgetLimited) are system-driven
-/// (host control and accounting respectively), and clearing deletes the row
-/// entirely rather than being a status.
+/// Ownership is **asymmetric**: a model may create/replace a goal, mark it
+/// [`Complete`](ThreadGoalStatus::Complete) and resume a paused one;
+/// [`Paused`](ThreadGoalStatus::Paused) /
+/// [`BudgetLimited`](ThreadGoalStatus::BudgetLimited) are entered only by the
+/// system (host control and accounting respectively), and clearing deletes the
+/// row entirely rather than being a status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThreadGoalStatus {

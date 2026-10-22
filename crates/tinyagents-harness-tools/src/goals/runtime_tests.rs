@@ -200,15 +200,20 @@ async fn concurrent_accounting_commits_once_and_notifies_once_on_budget_transiti
 }
 
 #[tokio::test]
-async fn turn_preparation_resumes_paused_goals_and_builds_prompt_and_budget_guard() {
+async fn turn_preparation_preserves_paused_goals_until_model_resumes_them() {
     let (goals, _) = operations();
     goals.set("t", "finish", Some(20)).await.unwrap();
     goals.pause("t").await.unwrap();
 
     let prepared = goals.prepare_turn("t").await.unwrap();
     let goal = prepared.goal.unwrap();
-    assert_eq!(goal.status, ThreadGoalStatus::Active);
-    assert!(prepared.context_block.unwrap().contains("finish"));
+    assert_eq!(goal.status, ThreadGoalStatus::Paused);
+    assert!(
+        prepared
+            .context_block
+            .as_deref()
+            .is_some_and(|block| block.contains("goal_resume"))
+    );
     assert!(prepared.budget_guard.is_some());
 }
 

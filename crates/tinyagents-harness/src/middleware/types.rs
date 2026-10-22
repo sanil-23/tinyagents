@@ -346,6 +346,19 @@ pub trait Middleware<State: Send + Sync, Ctx: Send + Sync = ()>: Send + Sync {
         Ok(())
     }
 
+    /// Runs after the host security gate has screened a tool result, so
+    /// observers can retain only the content that may reach a model request.
+    async fn after_tool_output_screened(
+        &self,
+        _ctx: &mut RunContext<Ctx>,
+        _state: &State,
+        _invocation: &ToolInvocationIdentity,
+        _result: &ToolResult,
+        _model_output: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Shared-reference admission check for a **nested** tool call: a tool
     /// calling another tool through
     /// [`ToolExecutionContext::call_tool`][crate::tool::ToolExecutionContext::call_tool].

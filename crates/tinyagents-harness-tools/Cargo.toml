@@ -27,6 +27,7 @@ default = ["todos", "goals", "skills"]
 todos = []
 goals = []
 skills = []
+state-block = ["goals", "todos", "dep:tinyinference-llm"]
 subagents = ["dep:tinyagents-orchestration", "dep:tinyagents-tasks", "dep:tinyinference-llm"]
 
 [dev-dependencies]

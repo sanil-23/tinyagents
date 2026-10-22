@@ -95,6 +95,19 @@ impl Middleware<()> for OrderRecorder {
             .push(format!("{}:after", self.label));
         Ok(())
     }
+
+    async fn after_model_rewrite(
+        &self,
+        _ctx: &mut RunContext,
+        _state: &(),
+        _request: &mut ModelRequest,
+    ) -> Result<()> {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("{}:rewrite", self.label));
+        Ok(())
+    }
 }
 
 /// Always fails its `before_model` hook to exercise short-circuiting.
@@ -149,6 +162,30 @@ async fn before_runs_forward_after_runs_reverse() {
         order,
         vec!["a:before", "b:before", "b:after", "a:after"],
         "before runs in registration order, after runs reversed"
+    );
+}
+
+#[tokio::test]
+async fn after_model_rewrite_runs_in_registration_order() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut stack: MiddlewareStack<()> = MiddlewareStack::new();
+    stack.push(Arc::new(OrderRecorder {
+        label: "rewriter",
+        log: log.clone(),
+    }));
+    stack.push(Arc::new(OrderRecorder {
+        label: "dispatch observer",
+        log: log.clone(),
+    }));
+
+    stack
+        .run_after_model_rewrite(&mut ctx(), &(), &mut ModelRequest::default())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec!["rewriter:rewrite", "dispatch observer:rewrite"]
     );
 }
 

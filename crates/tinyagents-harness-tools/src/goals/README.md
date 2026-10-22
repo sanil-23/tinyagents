@@ -13,9 +13,13 @@ subsecond turn time, and applies usage/status changes atomically within one
 process. Budgeted goal updates publish once cumulative usage since the last
 published update reaches five percent of the budget (at least one token).
 
-Before a turn, call `prepare_turn(thread_id)`. It reloads the goal, resumes it
-when paused, and returns `GoalTurnPreparation` containing the goal, optional
-`active_goal_context_block`, and optional `GoalBudgetGuard`. A host that uses
+Before a turn, call `prepare_turn(thread_id)`. It reloads the goal without
+changing its status and returns `GoalTurnPreparation` containing the goal, an
+optional context block, and an optional `GoalBudgetGuard`. Active and
+budget-limited goals receive their usual context. A paused goal remains paused,
+but its context tells the model to inspect the new message and call
+`goal_resume` if the user continues that objective, use `goal_set` for a
+different task, or leave the goal paused otherwise. A host that uses
 `tinyagents-hooks` constructs `GoalBudgetStopHook::for_goal(store, goal)` from
 the returned goal and installs it for that turn; the guard must remain attached
 for the duration of that turn. Keeping hook construction in the host avoids a
@@ -24,8 +28,9 @@ crate cycle.
 ## Model tool
 
 `GoalTool` is constructed directly with a `GoalToolKind` and shared `GoalStore`.
-The model-facing kinds are `Get`, `Set`, and `Complete`; pause, resume, and
-clear remain host controls. The target thread comes from
+The model-facing kinds are `Get`, `Set`, `Complete`, and `Resume`; pause and
+clear remain host controls. The model can resume a paused goal after it reads
+the incoming message. The target thread comes from
 `ToolExecutionContext::thread_id`, never a model argument.
 
 ## Persistence

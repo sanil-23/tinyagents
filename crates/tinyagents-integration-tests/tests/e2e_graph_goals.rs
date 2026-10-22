@@ -20,16 +20,24 @@ async fn prepared_goal_exposes_context_and_budget_for_a_host_turn() {
     assert_eq!(prepared.goal.as_ref().unwrap().goal_id, goal.goal_id);
     assert_eq!(
         prepared.goal.as_ref().unwrap().status,
-        ThreadGoalStatus::Active
+        ThreadGoalStatus::Paused
     );
     assert!(
         prepared
             .context_block
             .as_deref()
-            .unwrap()
-            .contains("process every item")
+            .is_some_and(|block| block.contains("goal_resume"))
     );
-    assert!(prepared.budget_guard.is_some());
+    let budget_guard = prepared.budget_guard.expect("paused goal budget guard");
+
+    goals.resume("thread-goal").await.expect("resume goal");
+    assert!(
+        budget_guard
+            .check(&goals.backing_store(), 1_000)
+            .await
+            .expect("check resumed goal budget")
+            .is_stop()
+    );
 
     goals
         .account_turn("thread-goal", 10, 5, Duration::from_millis(500))

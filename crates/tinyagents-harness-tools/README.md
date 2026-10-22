@@ -10,7 +10,8 @@ The default feature set enables `todos`, `goals`, and `skills`. The `subagents`
 feature enables the generic job and message tools and brings in
 `tinyagents-orchestration` and its task registry dependencies. Time,
 clarification, plan-exit, per-call binding, and thread-lock support are
-available without optional features.
+available without optional features. The `state-block` feature enables the
+run-state middleware and its required `goals` and `todos` modules.
 
 ## Public modules and tools
 
@@ -19,6 +20,8 @@ available without optional features.
   `GoalStore::prepare_turn` and composes a budget stop hook for the turn.
 - `todos` provides `TodoTool`, the persistent sequence model, and
   `TodoSequenceMiddleware`.
+- `state_block` provides `StateBlockMiddleware`, which rebuilds the current
+  goal, plan, and tool-call facts in each model request.
 - `skills` provides `UseSkillTool`, `PackCatalog`, `PackRegistryHandle`, and
   `UseSkillDispatch` for binding a selected tool from a named pack.
 - `subagents` provides `DriverSubAgentTool`, `SubAgentJobsTool`, and
