@@ -177,7 +177,8 @@ async fn the_reminder_fires_once_per_step_and_a_todo_call_restarts_the_count() {
     let note = tool_round(&mw, &mut ctx, "shell").await;
     assert!(
         note.contains("Step 1 \"A\" has been in progress for 3 rounds")
-            && note.contains("todo {\"complete\": 1}"),
+            && note.contains("todo {\"complete\": 1, \"facts\": [")
+            && note.contains("a list of step numbers"),
         "{note}"
     );
     for _ in 0..5 {

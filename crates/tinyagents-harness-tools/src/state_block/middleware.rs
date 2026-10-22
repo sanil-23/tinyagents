@@ -14,12 +14,11 @@ use tinyinference_llm::model::{ModelRequest, ModelResponse};
 use tinyinference_llm::tool::ToolCall;
 use tinytools::ToolResult;
 
-use crate::goals::{ThreadGoal, store as goal_store};
-use crate::todos::{TodoItem, TodoStatus, store as todo_store};
+use crate::todos::{TodoItem, TodoStatus};
 
 use super::ledger;
 use super::render::{STATE_BLOCK_HEADER, render};
-use super::types::{CallRecord, RunLedger, StateBlockMiddleware};
+use super::types::{CallRecord, RunLedger, RunState, StateBlockMiddleware};
 
 /// The `todo` tool's name: its own result already shows the plan.
 const TODO_TOOL_NAME: &str = "todo";
@@ -64,32 +63,18 @@ impl StateBlockMiddleware {
             .remove(&instance);
     }
 
-    /// The thread's goal; `None` without a thread or a goal, or when the store
-    /// cannot be read.
-    async fn goal(&self, thread_id: Option<&str>) -> Option<ThreadGoal> {
-        let thread_id = thread_id?;
-        match goal_store::get(&self.store, thread_id).await {
-            Ok(goal) => goal,
-            Err(error) => {
-                tracing::debug!(%error, "[tinyagents::mw] state_block: goal unreadable");
-                None
-            }
-        }
-    }
-
-    /// The thread's plan; empty without a thread or a plan, or when the store
-    /// cannot be read (the block then shows the facts alone).
-    async fn items(&self, thread_id: Option<&str>) -> Vec<TodoItem> {
+    /// The thread's saved state; empty without a thread, or when the store
+    /// cannot be read (the block then shows the run's facts alone).
+    async fn saved(&self, thread_id: Option<&str>) -> RunState {
         let Some(thread_id) = thread_id else {
-            return Vec::new();
+            return RunState::default();
         };
-        match todo_store::get(&self.store, thread_id).await {
-            Ok(list) => list.map(|list| list.items).unwrap_or_default(),
-            Err(error) => {
-                tracing::debug!(%error, "[tinyagents::mw] state_block: plan unreadable");
-                Vec::new()
-            }
-        }
+        RunState::load(&self.store, thread_id)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::debug!(%error, "[tinyagents::mw] state_block: saved state unreadable");
+                RunState::default()
+            })
     }
 }
 
@@ -111,8 +96,9 @@ fn remove_block(request: &mut ModelRequest) {
     });
 }
 
-/// Notes the step in progress, so the block can say how long it has run.
-fn track_step(ledger: &mut RunLedger, items: &[TodoItem]) {
+/// Notes the step in progress, so the block can say how long it has run, and
+/// the model's newest blocker when that step began.
+fn track_step(ledger: &mut RunLedger, items: &[TodoItem], newest_blocker: Option<&String>) {
     let current = items
         .iter()
         .position(|item| item.status == TodoStatus::InProgress)
@@ -120,6 +106,10 @@ fn track_step(ledger: &mut RunLedger, items: &[TodoItem]) {
     if ledger.step != current {
         ledger.step = current;
         ledger.step_since = ledger.round;
+        ledger.blocker_anchor = Some(newest_blocker.cloned());
+    }
+    if ledger.blocker_anchor.is_none() {
+        ledger.blocker_anchor = Some(newest_blocker.cloned());
     }
 }
 
@@ -144,12 +134,20 @@ impl<S: Send + Sync, C: Send + Sync> Middleware<S, C> for StateBlockMiddleware {
             .thread_id()
             .map(|id| id.as_str().to_owned())
             .or_else(|| self.fallback_thread.clone());
-        let goal = self.goal(thread_id.as_deref()).await;
-        let items = self.items(thread_id.as_deref()).await;
+        let saved = self.saved(thread_id.as_deref()).await;
         let block = self.with_run(ctx.instance_id(), |ledger| {
             ledger::age_out(ledger);
-            track_step(ledger, &items);
-            ledger.staged = render(goal.as_ref(), &items, ledger);
+            track_step(
+                ledger,
+                &saved.todos,
+                saved.notes.as_ref().and_then(|pad| pad.blockers.last()),
+            );
+            ledger.staged = render(
+                saved.goal.as_ref(),
+                saved.notes.as_ref(),
+                &saved.todos,
+                ledger,
+            );
             ledger.staged.clone()
         });
         if let Some(block) = block {

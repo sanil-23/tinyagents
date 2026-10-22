@@ -45,7 +45,7 @@ fn whole_list_writes_keep_the_order() {
         (
             plan(&[("A", InProgress), ("B", Pending), ("C", Completed)]),
             Err(
-                "Finish or cancel steps 1, 2 first, in order: todo {\"complete\": N} for each one that is done, or todo {\"cancel\": N, \"reason\": \"...\"}.",
+                "Finish or cancel steps 1, 2 first, in order: todo {\"complete\": [N, ...]} for the ones that are done, or todo {\"cancel\": N, \"reason\": \"...\"}.",
             ),
         ),
         // Ticking the step in progress and starting the next is the happy path.
@@ -92,7 +92,7 @@ fn complete_out_of_order_or_out_of_range_is_refused() {
     let before = items.clone();
     assert_eq!(
         complete(&mut items, 3).unwrap_err(),
-        "Finish or cancel steps 1, 2 first, in order: todo {\"complete\": N} for each one that is done, or todo {\"cancel\": N, \"reason\": \"...\"}."
+        "Finish or cancel steps 1, 2 first, in order: todo {\"complete\": [N, ...]} for the ones that are done, or todo {\"cancel\": N, \"reason\": \"...\"}."
     );
     for step in [0, 4] {
         assert!(
@@ -140,4 +140,13 @@ fn cancel_needs_a_reason_and_records_it() {
             .unwrap_err()
             .contains("was cancelled")
     );
+}
+
+#[test]
+fn complete_steps_closes_in_order_and_announces_only_the_new_current_step() {
+    let mut items = plan(&[("A", InProgress), ("B", Pending), ("C", Pending)]);
+    let notes = complete_steps(&mut items, &[2, 1, 2]).unwrap();
+    assert_eq!(statuses(&items), [Completed, Completed, InProgress]);
+    assert_eq!(notes, ["Step 3 \"C\" is now in progress."]);
+    assert!(complete_steps(&mut items, &[]).is_err());
 }
