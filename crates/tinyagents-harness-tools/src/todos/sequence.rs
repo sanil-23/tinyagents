@@ -83,6 +83,73 @@ pub(super) fn complete(items: &mut [TodoItem], step: usize) -> Result<Vec<String
     Ok(notes)
 }
 
+/// Completes several steps (1-based) top to bottom, all or none: each must be
+/// allowed by [`complete`] once the ones before it in the list are done, so
+/// `[1, 2, 3]` closes three steps in order and `[1, 3]` with step 2 open is
+/// refused. Only the last step's "now in progress" note is kept.
+pub(super) fn complete_steps(
+    items: &mut [TodoItem],
+    steps: &[usize],
+) -> Result<Vec<String>, String> {
+    let mut steps = steps.to_vec();
+    steps.sort_unstable();
+    steps.dedup();
+    let Some(&last) = steps.last() else {
+        return Err("`complete` needs at least one step number.".to_string());
+    };
+    let mut notes = Vec::new();
+    for step in steps {
+        let step_notes = complete(items, step)?;
+        if step == last {
+            notes.extend(step_notes);
+        } else {
+            notes.extend(
+                step_notes
+                    .into_iter()
+                    .filter(|note| !note.ends_with("is now in progress.")),
+            );
+        }
+    }
+    Ok(notes)
+}
+
+/// Cancels `cancel` (all with `reason`), then completes `complete`, in one
+/// write, all or none. Cancelling first lets "drop step 2, finish step 3" and
+/// "finish steps 4-5, drop step 6" both go through. Only the last "now in
+/// progress" note is kept.
+pub(super) fn close_steps(
+    items: &mut [TodoItem],
+    complete: &[usize],
+    cancel: &[usize],
+    reason: &str,
+) -> Result<Vec<String>, String> {
+    let mut notes = Vec::new();
+    let mut cancel = cancel.to_vec();
+    cancel.sort_unstable();
+    cancel.dedup();
+    for step in cancel {
+        notes.extend(self::cancel(items, step, reason)?);
+    }
+    if !complete.is_empty() {
+        // Completing always closes the step in progress first, so the complete
+        // phase reports the step that ends up in progress (or that every step
+        // is closed). A step the cancel phase started may be one it closes.
+        notes.retain(|note| !note.ends_with("is now in progress."));
+        notes.extend(complete_steps(items, complete)?);
+    }
+    let last_start = notes
+        .iter()
+        .rposition(|note| note.ends_with("is now in progress."));
+    Ok(notes
+        .into_iter()
+        .enumerate()
+        .filter(|(index, note)| {
+            !note.ends_with("is now in progress.") || Some(*index) == last_start
+        })
+        .map(|(_, note)| note)
+        .collect())
+}
+
 /// Marks step `step` (1-based) cancelled with `reason` and, when it was the
 /// step in progress, starts the next open one. Any open step may be
 /// cancelled: dropping a later step is planning, not skipping ahead.
@@ -146,8 +213,8 @@ fn ensure_earlier_closed(items: &[TodoItem], index: usize) -> Result<(), String>
         [] => Ok(()),
         [one] => Err(format!("Finish or cancel step {one} first.")),
         many => Err(format!(
-            "Finish or cancel steps {} first, in order: todo {{\"complete\": N}} for each one that \
-             is done, or todo {{\"cancel\": N, \"reason\": \"...\"}}.",
+            "Finish or cancel steps {} first, in order: todo {{\"complete\": [N, ...]}} for the ones \
+             that are done, or todo {{\"cancel\": N, \"reason\": \"...\"}}.",
             many.join(", ")
         )),
     }

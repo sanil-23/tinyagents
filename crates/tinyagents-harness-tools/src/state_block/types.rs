@@ -3,7 +3,28 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
+use serde::Serialize;
 use tinyagents_harness::store::Store;
+
+use crate::goals::ThreadGoal;
+use crate::scratchpad::Scratchpad;
+use crate::todos::TodoItem;
+
+/// What a thread has saved, read in one place: its goal, plan and notes. The
+/// block is rendered from it on every call, and a host reads it the same way
+/// ([`RunState::load`]) to show or debug the state outside a run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunState {
+    /// The thread (or fallback key) read.
+    pub thread_id: String,
+    /// The thread goal, if any.
+    pub goal: Option<ThreadGoal>,
+    /// The plan; empty without one.
+    pub todos: Vec<TodoItem>,
+    /// The model's notes, if it wrote any.
+    pub notes: Option<Scratchpad>,
+}
 
 /// Adds a freshly rendered run-state block to every model request.
 ///
@@ -40,6 +61,10 @@ pub(super) struct RunLedger {
     /// The block rendered for the request in flight, for re-application
     /// after request-rewriting middleware.
     pub staged: Option<String>,
+    /// The model's newest blocker when the current step (or, without a
+    /// plan, the run) began: a different newest blocker means it has
+    /// recorded one since. `None` until the first call sets it.
+    pub blocker_anchor: Option<Option<String>>,
 }
 
 /// What the ledger keeps of one tool call while it runs.

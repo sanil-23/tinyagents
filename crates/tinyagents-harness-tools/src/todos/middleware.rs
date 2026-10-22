@@ -164,8 +164,9 @@ impl TodoSequenceMiddleware {
                 );
                 run.pending_note = Some(wrap_harness_instruction(&format!(
                     "Step {} \"{}\" has been in progress for {rounds} rounds. If it's done, call \
-                     todo {{\"complete\": {}}}; if you are still on it, call todo {{}} to confirm. \
-                     After {} rounds without a plan update, other tools are refused.",
+                     todo {{\"complete\": {}, \"facts\": [\"what it established\"]}} (several \
+                     finished steps: a list of step numbers); if you are still on it, call todo {{}} \
+                     to confirm. After {} rounds without a plan update, other tools are refused.",
                     step.0,
                     step.1,
                     step.0,
@@ -262,8 +263,9 @@ impl<S: Send + Sync, C: Send + Sync> Middleware<S, C> for TodoSequenceMiddleware
             );
             return Err(TinyAgentsError::ToolFailed(format!(
                 "Update your plan first: step {step} \"{text}\" has been in progress for {stale} \
-                 rounds without a todo call. Call todo {{\"complete\": {step}}} if it is done, or \
-                 todo {{}} if you are still on it, then retry."
+                 rounds without a todo call. Call todo {{\"complete\": {step}, \"facts\": \
+                 [\"what it established\"]}} if it is done (a list of step numbers for several), \
+                 or todo {{}} if you are still on it, then retry."
             )));
         }
         let thread_id = self.thread_of(ctx);
