@@ -61,12 +61,26 @@ Steps run one at a time, top to bottom. Every write keeps that order:
 
 `TodoTool` is a harness `Tool` named `todo`. `{"todos": [{"content",
 "status"}]}` writes the whole list, `{"complete": N}` (1-based) completes step
-N and starts the next, `{"cancel": N, "reason": "..."}` drops one, and no
-arguments reads the list. The result carries the store's `notes`. Construct it directly with `TodoTool::new(store)`. The target thread comes
+N and starts the next (`{"complete": [N, M]}` closes several finished steps
+top to bottom, all or none; `cancel` takes a list too, and both may go in one
+call, cancels first; a list sent as a JSON string such as `"[1, 2]"` is read),
+`{"cancel": N, "reason": "..."}` drops one, and no arguments reads the list. The
+result carries the store's `notes`. Construct it directly with
+`TodoTool::new(store)`. The target thread comes
 from `ToolExecutionContext::thread_id` (never a tool argument); the bare
 `Tool::call` entry point errors without a thread. Domain errors (blank
 content, unknown status, an out-of-order step) are surfaced to the model as
 tool errors rather than failing the run.
+
+The same call, or one on its own, also takes the model's notes for the
+thread's [scratchpad](../scratchpad/mod.rs): `facts`, `blockers`, `approach`
+and `retract`. They are written first and taken out of the arguments, so each
+plan mode keeps its own argument rules; notes alone read the list. A result
+after a note write carries `scratchpad` (`facts`, `blockers`, `approach`); a
+plan refusal still keeps the notes and says so. A call that closes two or
+more steps (a `complete` list or a whole-list write) without `facts` or
+`blockers` gets a note asking for what those steps established: a model that
+ticks late, in a batch, otherwise keeps none of it.
 
 ## Middleware (`middleware.rs`)
 

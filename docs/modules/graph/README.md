@@ -143,4 +143,5 @@ executable code.
 - [Visualization, introspection, and testkit](visualization-testkit.md)
 - [Per-thread goal and graph-native continuation](goals.md)
 - [Per-thread todo list](todos.md)
+- [Per-thread scratchpad: the model's notes](scratchpad.md)
 - [Implementation milestones](milestones.md)

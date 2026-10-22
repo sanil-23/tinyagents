@@ -15,6 +15,8 @@ mod time_parse;
 
 #[cfg(feature = "goals")]
 pub mod goals;
+#[cfg(feature = "todos")]
+pub mod scratchpad;
 #[cfg(feature = "skills")]
 pub mod skills;
 #[cfg(feature = "state-block")]

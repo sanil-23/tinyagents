@@ -9,15 +9,21 @@
 //! model can't address another thread's list; the bare [`Tool::call`] entry
 //! point (no context) errors. Returns the updated items plus a markdown
 //! rendering.
+//!
+//! The same call (or one on its own) takes the model's notes for the thread's
+//! [scratchpad](crate::scratchpad): `facts`, `blockers`, `approach` and
+//! `retract`. They are written first, then the plan arguments run as if the
+//! notes were not there; notes alone read the list.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::store;
 use super::types::{TodoItem, TodoStatus, TodosSnapshot, parse_status};
+use crate::scratchpad::{Scratchpad, ScratchpadUpdate, store as scratchpad_store};
 use tinyagents_harness::error::{Result, TinyAgentsError};
 use tinyagents_harness::store::Store;
 use tinytools::{Tool, ToolPolicy, ToolResult, ToolRunContext, ToolSideEffects};
@@ -30,11 +36,18 @@ pub(super) const TODO_TOOL_NAME: &str = "todo";
 const TODO_DESCRIPTION: &str = "This thread's plan, for work with 3+ steps. Write it once with \
     `todos` (the complete list; it replaces the old one, and step 1 starts). Steps run one at a \
     time, in order. Tick a step with `{\"complete\": N}` (N from 1) only after its work has run \
-    and its result is in the conversation, before starting the next: that call starts step N+1. \
-    Drop a step with `{\"cancel\": N, \"reason\": \"...\"}`. No arguments reads the list. \
+    and its result is in the conversation, before starting the next: that call starts step N+1 \
+    (several finished steps: `{\"complete\": [N, M]}`). \
+    Drop a step with `{\"cancel\": N, \"reason\": \"...\"}` (a list too; it may go with \
+    `complete`). No arguments reads the list. \
     Ticking is bookkeeping, not work: in the same response (or your next turn, if you cannot call \
     tools in parallel) do the next step unless the list is finished. Replace the list at most \
-    once per assistant response.";
+    once per assistant response. Notes, in any call: `facts` (what a result proved), `blockers` \
+    (what does not work or must be avoided here, and why), `approach` (what you are trying now), `retract` (text of a note that \
+    was wrong). They stay in [run state] on every call; write one when you learn it.";
+
+/// The note arguments, taken out before the plan arguments are read.
+const NOTE_ARGS: [&str; 4] = ["facts", "blockers", "approach", "retract"];
 
 /// The `todo` harness [`Tool`], backed by a [`Store`](tinyagents_harness::store::Store).
 pub struct TodoTool {
@@ -99,6 +112,46 @@ impl TodoTool {
                 "arguments must be an object".to_string(),
             ));
         };
+        let (update, args) = match split_notes(args) {
+            Ok(split) => split,
+            Err(message) => return Ok(TodoOutcome::Error(message)),
+        };
+        let pad = if update.is_empty() {
+            None
+        } else {
+            match scratchpad_store::apply(&self.store, thread_id, &update).await {
+                Ok(pad) => Some(pad),
+                Err(TinyAgentsError::Validation(message)) => {
+                    return Ok(TodoOutcome::Error(message));
+                }
+                Err(e) => return Ok(TodoOutcome::Error(e.to_string())),
+            }
+        };
+        let before = closed_steps(&self.store, thread_id).await;
+        let mut outcome = self.dispatch_plan(thread_id, &args).await?;
+        if let TodoOutcome::Ok(payload) = &mut outcome
+            && update.facts.is_empty()
+            && update.blockers.is_empty()
+        {
+            note_unrecorded_closes(payload, &before);
+        }
+        Ok(match (outcome, pad) {
+            (TodoOutcome::Ok(mut payload), Some(pad)) => {
+                payload["scratchpad"] = notes_payload(&pad);
+                TodoOutcome::Ok(payload)
+            }
+            (TodoOutcome::Error(message), Some(_)) => {
+                TodoOutcome::Error(format!("{message} (your notes were saved)"))
+            }
+            (outcome, None) => outcome,
+        })
+    }
+
+    async fn dispatch_plan(
+        &self,
+        thread_id: &str,
+        args: &Map<String, Value>,
+    ) -> Result<TodoOutcome> {
         let unknown = |allowed: &[&str]| {
             let extra: Vec<&String> = args
                 .keys()
@@ -111,30 +164,29 @@ impl TodoTool {
                 ))
             })
         };
-        if let Some(step) = args.get("complete") {
-            if let Some(error) = unknown(&["complete"]) {
+        if args.contains_key("complete") || args.contains_key("cancel") {
+            if let Some(error) = unknown(&["complete", "cancel", "reason"]) {
                 return Ok(error);
             }
-            let step = match step_number(step) {
-                Ok(step) => step,
-                Err(message) => return Ok(TodoOutcome::Error(message)),
+            let steps = |name: &str| match args.get(name) {
+                Some(raw) => step_numbers(name, raw),
+                None => Ok(Vec::new()),
             };
-            return Ok(outcome(store::complete(&self.store, thread_id, step).await));
-        }
-        if let Some(step) = args.get("cancel") {
-            if let Some(error) = unknown(&["cancel", "reason"]) {
-                return Ok(error);
-            }
-            let step = match step_number(step) {
-                Ok(step) => step,
-                Err(message) => return Ok(TodoOutcome::Error(message)),
+            let (complete, cancel) = match (steps("complete"), steps("cancel")) {
+                (Ok(complete), Ok(cancel)) => (complete, cancel),
+                (Err(message), _) | (_, Err(message)) => return Ok(TodoOutcome::Error(message)),
             };
             let reason = args
                 .get("reason")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            if cancel.is_empty() && args.contains_key("reason") {
+                return Ok(TodoOutcome::Error(
+                    "`reason` goes with `cancel`".to_string(),
+                ));
+            }
             return Ok(outcome(
-                store::cancel(&self.store, thread_id, step, reason).await,
+                store::close_steps(&self.store, thread_id, &complete, &cancel, reason).await,
             ));
         }
         let snap = match args.get("todos") {
@@ -165,6 +217,62 @@ impl TodoTool {
     }
 }
 
+/// Splits the note arguments from the plan arguments.
+fn split_notes(
+    args: &Map<String, Value>,
+) -> std::result::Result<(ScratchpadUpdate, Map<String, Value>), String> {
+    let mut rest = args.clone();
+    let mut update = ScratchpadUpdate::default();
+    for name in NOTE_ARGS {
+        let Some(value) = rest.remove(name) else {
+            continue;
+        };
+        match name {
+            "facts" => update.facts = note_list(name, value)?,
+            "blockers" => update.blockers = note_list(name, value)?,
+            "retract" => update.retract = note_list(name, value)?,
+            _ => {
+                update.approach = match value {
+                    Value::Null => None,
+                    Value::String(text) => Some(text),
+                    other => {
+                        return Err(format!("`approach` is a string, got {other}"));
+                    }
+                }
+            }
+        }
+    }
+    Ok((update, rest))
+}
+
+/// A list of notes; a lone string is one note.
+fn note_list(name: &str, value: Value) -> std::result::Result<Vec<String>, String> {
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::String(text) => Ok(vec![text]),
+        Value::Array(values) => values
+            .into_iter()
+            .map(|value| match value {
+                Value::String(text) => Ok(text),
+                other => Err(format!("`{name}` holds strings, got {other}")),
+            })
+            .collect(),
+        other => Err(format!("`{name}` is a list of strings, got {other}")),
+    }
+}
+
+/// The working notes as the `todo` result shows them.
+fn notes_payload(pad: &Scratchpad) -> Value {
+    let mut payload = json!({
+        "facts": pad.facts,
+        "blockers": pad.blockers,
+    });
+    if let Some(approach) = &pad.approach {
+        payload["approach"] = json!(approach);
+    }
+    payload
+}
+
 /// A store outcome as the model reads it. A domain error (an order the plan
 /// refuses) is surfaced to the model rather than failing the whole run.
 fn outcome(snap: Result<TodosSnapshot>) -> TodoOutcome {
@@ -182,6 +290,75 @@ fn outcome(snap: Result<TodosSnapshot>) -> TodoOutcome {
         }
         Err(TinyAgentsError::Validation(message)) => TodoOutcome::Error(message),
         Err(e) => TodoOutcome::Error(e.to_string()),
+    }
+}
+
+/// One 1-based step number, or a list of them. A list or number sent as a
+/// JSON string (`"[1, 2]"`, `"3"`) is read too: models write it that way often
+/// enough that refusing it costs a call each time.
+fn step_numbers(name: &str, raw: &Value) -> std::result::Result<Vec<usize>, String> {
+    if let Value::String(text) = raw {
+        return match serde_json::from_str::<Value>(text.trim()) {
+            Ok(parsed @ (Value::Array(_) | Value::Number(_))) => step_numbers(name, &parsed),
+            _ => Err(format!(
+                "`{name}` is a step number or a list of them, got {raw}"
+            )),
+        };
+    }
+    match raw {
+        Value::Array(values) if values.is_empty() => {
+            Err(format!("`{name}` needs at least one step number"))
+        }
+        Value::Array(values) => values.iter().map(step_number).collect(),
+        single => step_number(single).map(|step| vec![step]),
+    }
+}
+
+/// The thread's closed steps, by content, before a write; empty when unreadable.
+async fn closed_steps(store: &Arc<dyn Store>, thread_id: &str) -> Vec<String> {
+    store::get(store, thread_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|list| {
+            list.items
+                .into_iter()
+                .filter(|item| item.status == TodoStatus::Completed)
+                .map(|item| item.content)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A call that completed several steps and recorded nothing gets a note
+/// asking for what they established: a model that ticks late, in a batch,
+/// otherwise keeps none of what those steps found.
+fn note_unrecorded_closes(payload: &mut Value, before: &[String]) {
+    let Some(todos) = payload.get("todos").and_then(Value::as_array) else {
+        return;
+    };
+    let newly: Vec<String> = todos
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item["status"] == "completed")
+        .filter(|(_, item)| {
+            item["content"]
+                .as_str()
+                .is_some_and(|content| !before.iter().any(|old| old == content))
+        })
+        .map(|(index, _)| (index + 1).to_string())
+        .collect();
+    if newly.len() < 2 {
+        return;
+    }
+    let note = format!(
+        "Steps {} were closed in one call with no notes. Record what they established (and \
+         anything that blocked you) now: todo {{\"facts\": [...], \"blockers\": [...]}}.",
+        newly.join(", ")
+    );
+    match payload.get_mut("notes").and_then(Value::as_array_mut) {
+        Some(notes) => notes.push(json!(note)),
+        None => payload["notes"] = json!([note]),
     }
 }
 
@@ -248,16 +425,37 @@ fn parameters_schema() -> Value {
                 }
             },
             "complete": {
-                "type": "integer",
+                "type": ["integer", "array", "string"],
                 "minimum": 1,
-                "description": "Complete step N (from 1) and start the next one."
+                "items": { "type": "integer", "minimum": 1 },
+                "description": "Complete step N (from 1), or several finished steps in order, and start the next one."
             },
             "cancel": {
-                "type": "integer",
+                "type": ["integer", "array", "string"],
                 "minimum": 1,
-                "description": "Cancel step N (from 1); needs `reason`."
+                "items": { "type": "integer", "minimum": 1 },
+                "description": "Cancel step N (from 1) or several; needs `reason`. May go with `complete` in one call."
             },
-            "reason": { "type": "string" }
+            "reason": { "type": "string" },
+            "facts": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Facts a tool result proved, one line each."
+            },
+            "blockers": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "What does not work or must be avoided here, and why (a failed approach, a limit, a constraint), one line each."
+            },
+            "approach": {
+                "type": "string",
+                "description": "What you are trying now; replaces the last one, \"\" clears it."
+            },
+            "retract": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Drop every note containing this text."
+            }
         },
         "additionalProperties": false
     })
@@ -315,3 +513,7 @@ impl Tool for TodoTool {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tool_notes_tests.rs"]
+mod notes_tests;

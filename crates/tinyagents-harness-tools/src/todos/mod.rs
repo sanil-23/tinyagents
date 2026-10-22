@@ -20,6 +20,7 @@ mod types;
 
 pub use middleware::{DEFAULT_REMINDER_ROUNDS, TodoSequenceMiddleware};
 pub use tool::TodoTool;
+pub(crate) use types::now_stamp;
 pub use types::{
     TodoItem, TodoList, TodoStatus, TodosSnapshot, normalise_list, parse_status, render_markdown,
 };

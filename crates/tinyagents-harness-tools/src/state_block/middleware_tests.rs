@@ -4,7 +4,9 @@ use tinyagents_harness::context::RunConfig;
 use tinyagents_harness::store::InMemoryStore;
 use tinyinference_llm::message::Message;
 
+use crate::goals::store as goal_store;
 use crate::state_block::STATE_BLOCK_HEADER;
+use crate::todos::store as todo_store;
 
 const THREAD: &str = "t";
 
@@ -434,4 +436,26 @@ async fn the_block_stays_last_when_a_later_note_is_pushed() {
             "the block follows same-message guidance (hoists={hoists}): {last}"
         );
     }
+}
+
+#[tokio::test]
+async fn the_block_shows_the_notes_the_todo_tool_saved() {
+    let store: Arc<dyn Store> = Arc::new(InMemoryStore::default());
+    let mw = StateBlockMiddleware::new(store.clone());
+    let mut ctx = ctx();
+    crate::scratchpad::store::apply(
+        &store,
+        THREAD,
+        &crate::scratchpad::ScratchpadUpdate {
+            facts: vec!["port is 8080".into()],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let shown = block(&mw, &mut ctx)
+        .await
+        .expect("notes alone make a block");
+    assert!(shown.contains("Verified facts (your notes"), "{shown}");
+    assert!(shown.contains("  - port is 8080"), "{shown}");
 }

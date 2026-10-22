@@ -14,7 +14,7 @@ every id and index.
 | checkpoint doc `{thread, namespace, seq, checkpoint_id, record}` | `{ns, thread, subgraph, seq, checkpoint_id, checkpoint}` under `Key::of([ns, thread, seq])` |
 | `<prefix>_leases` `{owner, expires_at_ms}` | `tsd.leases`, owner `graph`, key `Key::of([ns, thread])` (epoch fence) |
 | `graph_task_cache` `{graph, node, hash, value, expiresAtMs}` | `tsd.kv` owner `graph`, ns `task_cache:<graph>`, `expires_ms` metadata |
-| goals and todos (harness `Store`) | `tsd.kv` through the host's store, unchanged in code |
+| goals, todos and the scratchpad (harness `Store`) | `tsd.kv` through the host's store, unchanged in code |
 
 A collection gets one step per legacy prefix and a step chain cannot fork, so
 the steps chain `1 -> 2 -> 3 -> 4` (declared version 4). A migrated row carries

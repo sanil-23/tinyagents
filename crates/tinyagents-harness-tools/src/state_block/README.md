@@ -1,8 +1,8 @@
 # `state_block`: the run-state block
 
 `StateBlockMiddleware` adds one short block to every model request: the
-thread's goal, its plan (from the `todo` store) and facts the harness derived
-from the run's own tool calls. It never writes to the transcript and emits no
+thread's goal, its plan (from the `todo` store), the model's own notes (from
+the scratchpad) and facts the harness derived from the run's own tool calls. It never writes to the transcript and emits no
 events, so a host UI sees none of it.
 
 ## Why
@@ -20,13 +20,23 @@ and the hard facts at the tail of every request.
 |---|---|---|
 | Goal | `goals::store` for the run's thread | One line: status (active with budget left, paused, budget exhausted, complete) and the objective. |
 | Plan | `todos::store` for the run's thread | Every step with its mark (`[x]` `[>]` `[ ]` `[-]`), the step in progress and the tool rounds it has run. At most 20 steps. |
+| Current approach, Verified facts, Blockers | `scratchpad::store` for the run's thread | The model's notes, written through the `todo` tool's note arguments and labelled as its own. |
+| From your last finished task | `Scratchpad::last_task` | The facts and blockers of the last plan that finished, moved there at the end of its turn. |
 | Recent failures | `after_tool` results with `is_error` | The last 3, each with its age, tool, command (or argument summary) and the exit code plus first `[stderr]` line. Dropped after 4 rounds, or when the same command later succeeds. Exit codes 1, 2 or 141 with no `[stderr]` line from a search or compound command (including pipelines and multi-line scripts) are treated as exploration misses and omitted. |
+| Blocker request | Recent failures since the current step began (or the run, without a plan) | With 2 or more and no blocker recorded since, one line asks the model to record what blocks the step with `blockers` and set a new `approach`. Gone once it does. |
 | Reported not found | Shell wording in error output (`X: command not found`, `sh: 1: X: not found`, `command not found: X`) | Cleared when a later successful command runs `X`. |
 | Files written this run | Paths extracted from filesystem tool calls, patch envelopes and unified-diff headers | The last 6, distinct. |
 
-No section is ever a model's interpretation, so nothing in the block can be
-wrong in a way the tool results are not. With no goal, plan or fact, no block
-is added.
+The harness sections are never a model's interpretation, so they cannot be
+wrong in a way the tool results are not; the model's notes are labelled
+"your notes" and the model can `retract` them. With no goal, plan, note or
+fact, no block is added.
+
+The saved part (goal, plan, notes) is read through `RunState::load`, the same
+call a host uses to show the state outside a run; `RunState::render()` is the
+block a turn starts with. Each part is read on its own: one the store cannot
+return (an error, a record that no longer deserializes) is logged and left out,
+and the others still show.
 
 ## Placement and caching
 
