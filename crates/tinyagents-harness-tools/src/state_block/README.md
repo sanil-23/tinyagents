@@ -34,7 +34,9 @@ fact, no block is added.
 
 The saved part (goal, plan, notes) is read through `RunState::load`, the same
 call a host uses to show the state outside a run; `RunState::render()` is the
-block a turn starts with.
+block a turn starts with. Each part is read on its own: one the store cannot
+return (an error, a record that no longer deserializes) is logged and left out,
+and the others still show.
 
 ## Placement and caching
 

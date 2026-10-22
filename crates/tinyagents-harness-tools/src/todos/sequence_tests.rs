@@ -150,3 +150,24 @@ fn complete_steps_closes_in_order_and_announces_only_the_new_current_step() {
     assert_eq!(notes, ["Step 3 \"C\" is now in progress."]);
     assert!(complete_steps(&mut items, &[]).is_err());
 }
+
+#[test]
+fn close_steps_reports_the_step_in_progress_after_both_phases() {
+    // Cancelling step 1 starts step 2, which the complete phase then closes:
+    // only the final state is reported.
+    let mut items = plan(&[("A", InProgress), ("B", Pending), ("C", Pending)]);
+    let notes = close_steps(&mut items, &[2, 3], &[1], "x").unwrap();
+    assert_eq!(statuses(&items), [Cancelled, Completed, Completed]);
+    assert_eq!(notes, ["Every step is closed."]);
+
+    // A cancel alone still reports the step it started.
+    let mut items = plan(&[("A", InProgress), ("B", Pending), ("C", Pending)]);
+    let notes = close_steps(&mut items, &[], &[1], "x").unwrap();
+    assert_eq!(notes, ["Step 2 \"B\" is now in progress."]);
+
+    // Cancel then complete one step: the step after it is the current one.
+    let mut items = plan(&[("A", InProgress), ("B", Pending), ("C", Pending)]);
+    let notes = close_steps(&mut items, &[2], &[1], "x").unwrap();
+    assert_eq!(statuses(&items), [Cancelled, Completed, InProgress]);
+    assert_eq!(notes, ["Step 3 \"C\" is now in progress."]);
+}

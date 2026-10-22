@@ -63,18 +63,13 @@ impl StateBlockMiddleware {
             .remove(&instance);
     }
 
-    /// The thread's saved state; empty without a thread, or when the store
-    /// cannot be read (the block then shows the run's facts alone).
+    /// The thread's saved state; empty without a thread. A part the store
+    /// cannot return is left out and the rest still shows.
     async fn saved(&self, thread_id: Option<&str>) -> RunState {
-        let Some(thread_id) = thread_id else {
-            return RunState::default();
-        };
-        RunState::load(&self.store, thread_id)
-            .await
-            .unwrap_or_else(|error| {
-                tracing::debug!(%error, "[tinyagents::mw] state_block: saved state unreadable");
-                RunState::default()
-            })
+        match thread_id {
+            Some(thread_id) => RunState::load(&self.store, thread_id).await,
+            None => RunState::default(),
+        }
     }
 }
 

@@ -54,7 +54,8 @@ host calls `scratchpad::store::close_finished_plan(store, thread)`:
 
 `RunState::load(store, thread)` (in `state_block`) reads the goal, plan
 and notes together; `RunState::render()` is the block a turn would start with.
-The block middleware and a host's debug view use the same call.
+The block middleware and a host's debug view use the same call. Each part is
+read on its own, so an unreadable scratchpad leaves the goal and plan in place.
 
 ## Persistence
 

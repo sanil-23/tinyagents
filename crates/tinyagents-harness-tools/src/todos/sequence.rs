@@ -131,6 +131,10 @@ pub(super) fn close_steps(
         notes.extend(self::cancel(items, step, reason)?);
     }
     if !complete.is_empty() {
+        // Completing always closes the step in progress first, so the complete
+        // phase reports the step that ends up in progress (or that every step
+        // is closed). A step the cancel phase started may be one it closes.
+        notes.retain(|note| !note.ends_with("is now in progress."));
         notes.extend(complete_steps(items, complete)?);
     }
     let last_start = notes

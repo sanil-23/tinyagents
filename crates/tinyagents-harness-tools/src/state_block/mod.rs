@@ -49,6 +49,7 @@
 //! **One read path.** The saved part (goal, plan, notes) is a [`RunState`],
 //! read with [`RunState::load`]; a host shows or debugs the state through the
 //! same type, and [`RunState::render`] gives the block a turn would start with.
+//! A part that cannot be read is left out; the others still show.
 //! The ledger lives only in the run.
 //!
 //! **Model-only.** The middleware emits no events, so a host UI sees none of
